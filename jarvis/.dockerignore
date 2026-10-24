@@ -1,0 +1,10 @@
+.env
+.env.*
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.sqlite3*
+README.md
+requirements-dev.txt
+pytest.ini

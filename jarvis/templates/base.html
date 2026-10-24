@@ -1,0 +1,47 @@
+<!doctype html>
+{% from "_hud.html" import core_mark %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#070B14">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}abuai{% endblock %} · abuai</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <div class="hud-backdrop" aria-hidden="true"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') if current_user else url_for('login') }}" aria-label="abuai home">
+      {{ core_mark("brand-mark") }}
+      <span>abuai</span>
+    </a>
+    {% if current_user %}
+    <nav class="nav" aria-label="Main">
+      {% set ep = request.endpoint %}
+      <a href="{{ url_for('dashboard') }}" {% if ep == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="{{ url_for('reports') }}" {% if ep in ('reports', 'report_detail') %}aria-current="page"{% endif %}>Reports</a>
+      <a href="{{ url_for('settings') }}" {% if ep == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+      <form method="post" action="{{ url_for('logout') }}" class="nav-logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-ghost btn-sm" data-loading-text="Signing out…">Sign out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main id="main" class="{% block main_class %}container{% endblock %}" tabindex="-1">
+    {% if 'auth-wrap' in self.main_class() %}<div class="auth-mark">{{ core_mark("core-mark") }}<p class="auth-mark-label">abuai · Jarvis</p></div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">
+    <p>&copy; {{ current_year }} abuai · Private command center</p>
+  </footer>
+  <script src="{{ url_for('static', filename='common.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

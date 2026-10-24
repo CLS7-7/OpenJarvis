@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Page not found{% endblock %}
+{% block main_class %}container auth-wrap{% endblock %}
+{% block content %}
+<section class="panel error-card" aria-labelledby="err-title">
+  <p class="error-code" aria-hidden="true">404</p>
+  <h1 id="err-title">Page not found</h1>
+  <p class="muted">That page does not exist or is no longer available.</p>
+  <a class="btn btn-primary" href="{{ url_for('dashboard') if current_user else url_for('login') }}">{{ 'Back to dashboard' if current_user else 'Go to sign in' }}</a>
+</section>
+{% endblock %}

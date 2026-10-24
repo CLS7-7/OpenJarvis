@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block main_class %}container auth-wrap{% endblock %}
+{% block content %}
+<section class="panel error-card" aria-labelledby="err-title">
+  <p class="error-code" aria-hidden="true">{{ code }}</p>
+  <h1 id="err-title">{{ title }}</h1>
+  <p class="muted">{{ message }}</p>
+  <a class="btn btn-primary" href="{{ url_for('dashboard') if current_user else url_for('login') }}">{{ 'Back to dashboard' if current_user else 'Go to sign in' }}</a>
+</section>
+{% endblock %}

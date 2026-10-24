@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Settings</h1></div>
+<div class="settings-grid">
+  <section class="panel" aria-labelledby="names-title">
+    <h2 id="names-title" class="panel-title">Employee names</h2>
+    {% if saved %}<p class="alert alert-ok" role="status">Names saved.</p>{% endif %}
+    {% if errors %}<p class="alert alert-error" role="alert">Some names need fixing.</p>{% endif %}
+    <form method="post" action="{{ url_for('settings') }}" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for emp in employees %}
+      {% set field = 'name_' ~ emp.id %}
+      <label class="field">
+        <span>{{ emp.key | replace('_', ' ') | title }}</span>
+        <input name="{{ field }}" value="{{ form.get(field, '') if form else emp.name }}" required maxlength="40" autocomplete="off" {% if errors.get(emp.id) %}aria-invalid="true"{% endif %}>
+        {% if errors.get(emp.id) %}<small class="hint hint-error">{{ errors[emp.id] }}</small>{% endif %}
+      </label>
+      {% endfor %}
+      <button type="submit" class="btn btn-primary" data-loading-text="Saving…">Save names</button>
+    </form>
+  </section>
+  <section class="panel" aria-labelledby="status-title">
+    <h2 id="status-title" class="panel-title">Connections</h2>
+    <dl class="status-list">
+      <div>
+        <dt>Bridge (Hermes)</dt>
+        <dd><span class="dot {{ 'dot-ok' if bridge.connected else 'dot-warn' }}" aria-hidden="true"></span>{{ bridge.label }}</dd>
+      </div>
+      <div>
+        <dt>Voice (ElevenLabs)</dt>
+        <dd><span class="dot {{ 'dot-ok' if voice_configured else 'dot-warn' }}" aria-hidden="true"></span>{{ 'Configured' if voice_configured else 'Not configured' }}</dd>
+      </div>
+    </dl>
+    <p class="muted small">Connections are configured with server environment variables. They are read-only here and no credential is ever shown.</p>
+  </section>
+</div>
+{% endblock %}

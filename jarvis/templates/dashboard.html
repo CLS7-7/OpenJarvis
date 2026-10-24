@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% from "_hud.html" import core_svg, robot, desk_screen, status_icon %}
+{% block title %}Command center{% endblock %}
+{% block body_class %}page-dashboard{% endblock %}
+{% block content %}
+<h1 class="sr-only">Command center</h1>
+
+<p id="bridge-banner" class="alert alert-warn banner" role="status" {% if state.bridge.connected %}hidden{% endif %}>
+  <span class="dot dot-warn" aria-hidden="true"></span>
+  <span>Bridge not connected — tasks will send when Hermes is connected.</span>
+  <button type="button" class="btn btn-ghost btn-sm banner-action" data-open-window="hermes" aria-label="Open Hermes link details">Hermes details</button>
+</p>
+
+{%- set working_count = state.employees | selectattr('status', 'equalto', 'working') | list | length %}
+{%- set latest = state.recent_tasks[0] if state.recent_tasks else None %}
+{%- set stats = state.stats %}
+
+<div class="hud-grid">
+
+  {# ---- Jarvis core ------------------------------------------------- #}
+  <section class="core-panel voice-panel core-state-{{ 'working' if working_count else 'idle' }}" id="jarvis-core" aria-labelledby="core-title"
+           data-worklet-raw="{{ url_for('static', filename='vendor/elevenlabs-client-1.26.0/rawAudioProcessor.js') }}"
+           data-worklet-concat="{{ url_for('static', filename='vendor/elevenlabs-client-1.26.0/audioConcatProcessor.js') }}">
+    <canvas class="core-particles" id="core-particles" aria-hidden="true"></canvas>
+    <div class="core-stage">{{ core_svg() }}</div>
+    <div class="core-title">
+      <h2 id="core-title">JARVIS</h2>
+      <p class="core-tagline">Voice AI assistant · Talk. I listen. I understand. I act.</p>
+    </div>
+    <canvas class="waveform" id="waveform" aria-hidden="true"></canvas>
+    <div class="talk-dock">
+      <svg class="chat-bubble chat-bubble-l" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path d="M6 4h36a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H20l-9 7v-7H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z" fill="none" stroke="#67E8F9" stroke-width="1.6"/><path d="M12 14h24M12 20h16" stroke="#67E8F9" stroke-width="1.6" stroke-linecap="round" opacity=".7"/></svg>
+      <button type="button" id="talk-btn" class="talk-btn" data-state="{{ 'idle' if state.voice.configured else 'unconfigured' }}"
+              aria-pressed="false" aria-describedby="voice-status" {% if not state.voice.configured %}disabled{% endif %}>
+        <span class="talk-orb" aria-hidden="true">
+          <span class="talk-ring"></span>
+          <svg class="talk-icon" viewBox="0 0 24 24" focusable="false"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" fill="currentColor"/></svg>
+        </span>
+        <span class="talk-label">{{ 'Talk to Jarvis' if state.voice.configured else 'Voice not configured yet' }}</span>
+      </button>
+      <svg class="chat-bubble chat-bubble-r" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path d="M42 4H6a4 4 0 0 0-4 4v18a4 4 0 0 0 4 4h22l9 7v-7h5a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4Z" fill="none" stroke="#7C5CFF" stroke-width="1.6"/><circle cx="16" cy="17" r="2" fill="#7C5CFF"/><circle cx="24" cy="17" r="2" fill="#7C5CFF"/><circle cx="32" cy="17" r="2" fill="#7C5CFF"/></svg>
+    </div>
+    <p id="voice-status" class="voice-status" role="status" aria-live="polite">
+      {%- if state.voice.configured %}Press Talk and give Jarvis your order. Your agent passes it to Hermes, and the task appears here when Hermes reports it.{% else %}Voice will be available once the ElevenLabs agent is configured on the server.{% endif -%}
+    </p>
+  </section>
+
+  {# ---- Command ----------------------------------------------------- #}
+  <section class="panel holo command-panel" aria-labelledby="command-title">
+    <h2 id="command-title" class="panel-title">Command</h2>
+    <form id="command-form" class="form" novalidate>
+      <label class="field">
+        <span>Assign to</span>
+        <select id="employee-picker" name="employee_id" required>
+          {% for emp in state.employees %}<option value="{{ emp.id }}">{{ emp.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>What should they do?</span>
+        <textarea id="command-text" name="command_text" rows="4" maxlength="4000" required placeholder="Describe the task in plain language"></textarea>
+      </label>
+      <div class="form-row">
+        <button type="submit" id="command-send" class="btn btn-primary" data-loading-text="Sending…">Send command</button>
+        <p id="command-result" class="form-result" role="status" aria-live="polite"></p>
+      </div>
+    </form>
+  </section>
+
+  {# ---- Robot team at the desk ------------------------------------- #}
+  <section class="panel holo desk-panel" aria-labelledby="team-title">
+    <div class="section-head">
+      <h2 id="team-title" class="panel-title">The desk</h2>
+      <p class="desk-holo" id="desk-holo"><span class="desk-holo-ring" aria-hidden="true"></span><span id="desk-holo-text">{{ working_count }} of {{ state.employees | length }} working</span></p>
+    </div>
+    <div class="boardroom">
+      <div class="skyline" aria-hidden="true">
+        <svg viewBox="0 0 600 120" preserveAspectRatio="none" focusable="false">
+          <path d="M0 120V70h30V40h24v30h18V20h28v50h16V55h30v65h12V30h22v90h20V60h26V35h18v85h14V50h34v70h16V25h26v95h18V65h30V45h20v75h16V58h28v62h18V38h24v82H600Z" fill="#22D3EE" opacity=".08"/>
+          <g fill="#67E8F9" opacity=".25"><rect x="84" y="30" width="3" height="3"/><rect x="92" y="44" width="3" height="3"/><rect x="226" y="40" width="3" height="3"/><rect x="232" y="62" width="3" height="3"/><rect x="420" y="34" width="3" height="3"/><rect x="428" y="58" width="3" height="3"/><rect x="540" y="48" width="3" height="3"/></g>
+        </svg>
+      </div>
+      <ul class="employee-grid seats" id="employee-grid">
+        {% for emp in state.employees %}
+        {% set t = emp.current_task %}
+        {% set phase = 'working' if emp.status == 'working' else ('alert' if t and t.status in ('queued', 'sent') else ('done' if emp.status == 'done' else 'idle')) %}
+        <li class="emp-card{% if emp.status == 'working' %} is-working{% endif %}" data-employee-id="{{ emp.id }}" data-status="{{ emp.status }}" data-phase="{{ phase }}" data-color="{{ emp.color }}">
+          <div class="seat-stage">
+            <button type="button" class="seat-open" data-open-employee="{{ emp.id }}" aria-label="Open {{ emp.name }} details">
+              <span class="seat-open-hint" aria-hidden="true">Open</span>
+            </button>
+            <span class="seat-beam" aria-hidden="true"></span>
+            <span class="seat-spot" aria-hidden="true"></span>
+            <div class="robot-wrap">{{ robot(emp) }}</div>
+            <div class="seat-desk" aria-hidden="true">{{ desk_screen(emp) }}</div>
+            <span class="seat-badge" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="11" fill="#052e2b" stroke="#34D399" stroke-width="1.5"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#34D399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="emp-info">
+            <div class="emp-head">
+              <h3 class="emp-name">{{ emp.name }}</h3>
+              <span class="pill pill-{{ emp.status }}" data-role="pill">{{ emp.status_label }}</span>
+            </div>
+            <p class="emp-task" data-role="task">{% if t %}<span class="emp-ref">{{ t.ref }}</span> {{ t.title }}{% else %}No tasks yet{% endif %}</p>
+            <p class="emp-task-status muted small" data-role="task-status">{% if t %}{{ t.status_label }}{% if t.status == 'queued' and not state.bridge.connected %} — waiting for bridge{% endif %}{% endif %}</p>
+            <progress class="progress" max="100" value="{{ emp.progress }}" data-role="progress" aria-label="{{ emp.name }} progress">{{ emp.progress }}%</progress>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  {# ---- Voice commands --------------------------------------------- #}
+  <section class="panel holo holo-voice" aria-labelledby="recent-title">
+    <div class="section-head">
+      <h2 id="recent-title" class="panel-title">Voice commands</h2>
+      <p class="voice-live" id="voice-live" data-state="{{ 'idle' if state.voice.configured else 'unconfigured' }}">
+        <span class="voice-live-dot" aria-hidden="true"></span><span id="voice-live-text">{{ 'Standing by' if state.voice.configured else 'Voice not configured' }}</span>
+      </p>
+    </div>
+    <ul class="task-list" id="recent-tasks">
+      {% for task in state.recent_tasks %}
+      <li class="task-row">
+        <a href="{{ task.url }}" class="task-link" data-open-task="{{ task.ref }}" aria-label="Open task {{ task.ref }}: {{ task.title }}">
+          <span class="task-icon status-{{ task.status }}">{{ status_icon(task.status) }}</span>
+          <span class="task-ref">{{ task.ref }}</span>
+          <span class="task-title">{{ task.title }}</span>
+          <span class="task-meta muted small">{{ task.employee_name }} · <time datetime="{{ task.created_at }}">{{ task.created_human }}</time>{% if task.source != 'text' %} · {{ task.source_label | lower }}{% endif %}</span>
+          <span class="status status-{{ task.status }}">{{ task.status_label }}</span>
+        </a>
+      </li>
+      {% else %}
+      <li class="empty-state">
+        <p class="empty-title">No tasks yet</p>
+        <p class="muted small">Send a command or talk to Jarvis — reports appear here as soon as a task is created.</p>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="panel-foot"><a class="link-strong" href="{{ url_for('reports') }}">View all reports</a></p>
+  </section>
+
+  {# ---- Hermes link map ------------------------------------------- #}
+  {%- set any_working = working_count > 0 %}
+  {%- set bstate = 'connected' if state.bridge.connected else ('unreachable' if state.bridge.configured else 'unconfigured') %}
+  <section class="panel holo holo-link{% if not latest %} is-empty{% endif %}" id="link-map" aria-labelledby="link-title" data-bridge="{{ bstate }}">
+    <h2 id="link-title" class="panel-title">Hermes link</h2>
+    <div class="link-map">
+      <div class="link-node link-core" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false"><circle cx="32" cy="32" r="27" fill="none" stroke="#22D3EE" stroke-width="2" stroke-dasharray="20 8"/><circle cx="32" cy="32" r="12" fill="#22D3EE" opacity=".35"/><circle cx="32" cy="32" r="6" fill="#E6FBFF"/></svg>
+        <span class="link-node-label">Jarvis</span>
+      </div>
+      <div class="link-line{% if any_working %} is-flowing{% endif %}" data-line="core-hermes" aria-hidden="true"><span class="link-track"><span class="link-pulse"></span></span></div>
+      <button type="button" class="link-node link-hermes" id="hermes-orb" data-open-window="hermes" data-bridge="{{ bstate }}" aria-label="Open Hermes link details: {{ state.bridge.label }}">
+        <span class="hermes-orb" aria-hidden="true"><span class="hermes-orb-core"></span><span class="hermes-orb-slash"></span></span>
+        <span class="link-node-label">Hermes</span>
+        <span class="hermes-label" id="hermes-label">{{ state.bridge.label }}</span>
+      </button>
+      <div class="link-line{% if any_working %} is-flowing{% endif %}" data-line="hermes-team" aria-hidden="true"><span class="link-track"><span class="link-pulse"></span></span></div>
+      <ul class="link-team" aria-label="Employees">
+        {% for emp in state.employees %}
+        <li><button type="button" class="link-bot{% if emp.status == 'working' %} is-working{% endif %}" data-open-employee="{{ emp.id }}" data-link-employee="{{ emp.id }}" aria-label="Open {{ emp.name }} details — {{ emp.status_label }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="16" height="13" rx="6" fill="#EEF3FB"/><rect x="7" y="9" width="10" height="5" rx="2.5" fill="#0B1222"/><circle cx="10" cy="11.5" r="1.3" fill="{{ emp.color }}"/><circle cx="14" cy="11.5" r="1.3" fill="{{ emp.color }}"/><rect x="9" y="19" width="6" height="3" rx="1.5" fill="{{ emp.color }}"/></svg>
+        </button></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <p class="flow-caption" id="flow-caption">
+      {%- if latest %}<button type="button" class="inline-link" data-open-task="{{ latest.ref }}" aria-label="Open task {{ latest.ref }}">{{ latest.ref }}</button> · {{ latest.employee_name }} · {{ latest.status_label }}{% if latest.status == 'queued' and not state.bridge.connected %} — waiting for bridge{% endif %}
+      {%- else %}No tasks yet — the link lights up as your first command moves through Hermes.{% endif -%}
+    </p>
+  </section>
+
+  {# ---- Live feed --------------------------------------------------- #}
+  <section class="panel holo holo-feed" aria-labelledby="feed-title">
+    <div class="section-head">
+      <h2 id="feed-title" class="panel-title">Live feed</h2>
+      <p class="feed-live"><span class="voice-live-dot" aria-hidden="true"></span>Watching</p>
+    </div>
+    <ol class="feed-list" id="live-feed" aria-live="polite" aria-relevant="additions">
+      <li class="feed-empty">Events appear here the moment they happen: new tasks, hand-offs to Hermes, work starting and finishing, and the Hermes connection changing.</li>
+    </ol>
+  </section>
+
+  {# ---- Analytics -------------------------------------------------- #}
+  {%- set rate = stats.completion_rate %}
+  <section class="panel holo holo-analytics" aria-labelledby="stats-title">
+    <button type="button" class="panel-hit" id="open-stats" data-open-window="stats" aria-label="Open AI analytics details"></button>
+    <h2 id="stats-title" class="panel-title">AI analytics <span class="panel-open-hint" aria-hidden="true">Open</span></h2>
+    <div class="analytics">
+      <figure class="gauge" aria-labelledby="gauge-caption">
+        <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#22D3EE" stroke-opacity=".15" stroke-width="10"/>
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#22D3EE" stroke-opacity=".35" stroke-width="1" stroke-dasharray="2 4" transform="scale(1.2) translate(-10 -10)"/>
+          <circle id="gauge-arc" cx="60" cy="60" r="48" fill="none" stroke="#67E8F9" stroke-width="10" stroke-linecap="round"
+                  stroke-dasharray="301.59" stroke-dashoffset="{{ '%.2f' | format(301.59 * (1 - (rate or 0) / 100)) }}" transform="rotate(-90 60 60)"/>
+        </svg>
+        <span class="gauge-value" id="gauge-value">{{ rate ~ '%' if rate is not none else '—' }}</span>
+        <figcaption id="gauge-caption" class="gauge-caption">Completion rate</figcaption>
+      </figure>
+      <dl class="stat-grid">
+        <div><dt>Tasks today</dt><dd id="stat-today">{{ stats.today }}</dd></div>
+        <div><dt>Completed</dt><dd id="stat-done">{{ stats.done }}</dd></div>
+        <div><dt>Working now</dt><dd id="stat-working">{{ stats.working }}</dd></div>
+        <div><dt>Failed</dt><dd id="stat-failed">{{ stats.failed }}</dd></div>
+      </dl>
+    </div>
+    <p class="muted small panel-foot" id="stat-total">{{ stats.total }} task{{ '' if stats.total == 1 else 's' }} recorded in total.</p>
+  </section>
+</div>
+
+<div class="holo-stage" id="holo-stage">
+  <div class="holo-scrim" id="holo-scrim" hidden></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.26.0/dist/lib.iife.js" integrity="sha384-GAgUf1yx/dGreo/QTqLRVycB5sMQdsPKOmbMWlKec+fjMXzz+OXy4c6EfjB7Anb7" crossorigin="anonymous" defer></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+<script src="{{ url_for('static', filename='voice.js') }}" defer></script>
+<script src="{{ url_for('static', filename='hud.js') }}" defer></script>
+<script src="{{ url_for('static', filename='windows.js') }}" defer></script>
+{% endblock %}
