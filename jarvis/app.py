@@ -176,6 +176,10 @@ def init_db(db_path: str) -> None:
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        for column in ("sent_at", "started_at"):
+            if column not in columns:  # additive migration for the task timeline
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} INTEGER")
         for sort, (key, color, style) in enumerate(EMPLOYEE_SEED, start=1):
             conn.execute(
                 "INSERT OR IGNORE INTO employees (key, name, color, avatar_style, sort) VALUES (?, ?, ?, ?, ?)",
@@ -406,15 +410,17 @@ def mark_bridge(conn, ok: bool, error: str = "") -> None:
 
 
 def bridge_state(conn, bridge: Bridge) -> dict:
-    if not bridge.configured:
-        return {"configured": False, "connected": False, "label": "Not configured"}
     last_ok = int(get_setting(conn, "bridge_last_ok", 0) or 0)
     last_fail = int(get_setting(conn, "bridge_last_fail", 0) or 0)
+    contact = {"last_ok": iso(last_ok) if last_ok else None, "last_fail": iso(last_fail) if last_fail else None}
+    if not bridge.configured:
+        return {"configured": False, "connected": False, "label": "Not configured", **contact}
     connected = last_ok >= now() - BRIDGE_FRESH_SECONDS and last_ok >= last_fail
     return {
         "configured": True,
         "connected": connected,
         "label": "Connected" if connected else "Configured — not reachable",
+        **contact,
     }
 
 
@@ -435,9 +441,9 @@ def forward_task(conn, bridge: Bridge, task_id: int) -> bool:
         return False
     mark_bridge(conn, True)
     conn.execute(
-        "UPDATE tasks SET status = 'sent', bridge_task_id = ?, updated_at = ? "
+        "UPDATE tasks SET status = 'sent', bridge_task_id = ?, updated_at = ?, sent_at = ? "
         "WHERE id = ? AND status = 'queued' AND bridge_task_id IS NULL",
-        (bridge_task_id, now(), task_id),
+        (bridge_task_id, now(), now(), task_id),
     )
     return True
 
@@ -466,9 +472,9 @@ def apply_bridge_update(conn, task_id: int, data: dict) -> None:
     if new_status == "done" and not (isinstance(reported, (int, float)) and not isinstance(reported, bool)):
         progress = 100  # the bridge reported completion without a progress value
     conn.execute(
-        "UPDATE tasks SET status = ?, progress = ?, result_text = ?, updated_at = ?, finished_at = ? "
-        "WHERE id = ? AND status NOT IN ('done', 'failed')",
-        (new_status, progress, result_text, now(), finished_at, task_id),
+        "UPDATE tasks SET status = ?, progress = ?, result_text = ?, updated_at = ?, finished_at = ?, "
+        "started_at = COALESCE(started_at, ?) WHERE id = ? AND status NOT IN ('done', 'failed')",
+        (new_status, progress, result_text, now(), finished_at, now() if new_status == "working" else None, task_id),
     )
 
 
@@ -589,42 +595,84 @@ def task_dict(row) -> dict:
 
 
 TASK_SELECT = (
-    "SELECT t.*, e.name AS employee_name FROM tasks t JOIN employees e ON e.id = t.employee_id "
+    "SELECT t.*, e.name AS employee_name, e.key AS employee_key FROM tasks t JOIN employees e ON e.id = t.employee_id "
 )
 
 
+def task_full(row) -> dict:
+    """Every stored field of a task, for the task window."""
+    data = task_dict(row)
+    data.update({
+        "employee_key": row["employee_key"],
+        "command_text": row["command_text"],
+        "result_text": row["result_text"],
+        "bridge_task_id": row["bridge_task_id"],
+        "updated_at": iso(row["updated_at"]),
+        "sent_at": iso(row["sent_at"]),
+        "started_at": iso(row["started_at"]),
+    })
+    return data
+
+
 def employees_with_status(conn) -> list[dict]:
-    result = []
-    for emp in conn.execute("SELECT * FROM employees ORDER BY sort, id").fetchall():
-        active = conn.execute(
-            TASK_SELECT + "WHERE t.employee_id = ? AND t.status IN ('working', 'sent', 'queued') "
-            "ORDER BY CASE t.status WHEN 'working' THEN 0 ELSE 1 END, t.id DESC LIMIT 1",
-            (emp["id"],),
-        ).fetchone()
-        latest = active or conn.execute(
-            TASK_SELECT + "WHERE t.employee_id = ? ORDER BY t.id DESC LIMIT 1", (emp["id"],)
-        ).fetchone()
-        if latest is None:
-            status = "idle"
-        elif latest["status"] == "working":
-            status = "working"
-        elif latest["status"] == "done" and active is None:
-            status = "done"
-        else:
-            status = "idle"
-        current = task_dict(latest) if latest else None
-        result.append({
-            "id": emp["id"],
-            "key": emp["key"],
-            "name": emp["name"],
-            "color": safe_color(emp["color"]),
-            "avatar_style": emp["avatar_style"],
-            "status": status,
-            "status_label": {"idle": "Idle", "working": "Working", "done": "Done"}[status],
-            "current_task": current,
-            "progress": current["progress"] if current else 0,
-        })
-    return result
+    return [employee_status(conn, emp) for emp in conn.execute("SELECT * FROM employees ORDER BY sort, id").fetchall()]
+
+
+def employee_status(conn, emp) -> dict:
+    active = conn.execute(
+        TASK_SELECT + "WHERE t.employee_id = ? AND t.status IN ('working', 'sent', 'queued') "
+        "ORDER BY CASE t.status WHEN 'working' THEN 0 ELSE 1 END, t.id DESC LIMIT 1",
+        (emp["id"],),
+    ).fetchone()
+    latest = active or conn.execute(
+        TASK_SELECT + "WHERE t.employee_id = ? ORDER BY t.id DESC LIMIT 1", (emp["id"],)
+    ).fetchone()
+    if latest is None:
+        status = "idle"
+    elif latest["status"] == "working":
+        status = "working"
+    elif latest["status"] == "done" and active is None:
+        status = "done"
+    else:
+        status = "idle"
+    current = task_dict(latest) if latest else None
+    return {
+        "id": emp["id"],
+        "key": emp["key"],
+        "name": emp["name"],
+        "color": safe_color(emp["color"]),
+        "avatar_style": emp["avatar_style"],
+        "status": status,
+        "status_label": {"idle": "Idle", "working": "Working", "done": "Done"}[status],
+        "current_task": current,
+        "progress": current["progress"] if current else 0,
+    }
+
+
+def employee_detail(conn, emp) -> dict:
+    data = employee_status(conn, emp)
+    rows = conn.execute(TASK_SELECT + "WHERE t.employee_id = ? ORDER BY t.id DESC LIMIT 10", (emp["id"],)).fetchall()
+    data["recent_tasks"] = [task_dict(r) for r in rows]
+    counts = {"total": 0, "queued": 0, "sent": 0, "working": 0, "done": 0, "failed": 0}
+    for status, n in conn.execute(
+        "SELECT status, COUNT(*) FROM tasks WHERE employee_id = ? GROUP BY status", (emp["id"],)
+    ).fetchall():
+        counts[status] = n
+        counts["total"] += n
+    data["counts"] = counts
+    latest = conn.execute(
+        TASK_SELECT + "WHERE t.employee_id = ? AND t.result_text IS NOT NULL AND t.result_text != '' "
+        "ORDER BY t.id DESC LIMIT 1",
+        (emp["id"],),
+    ).fetchone()
+    data["latest_result"] = None if latest is None else {
+        "ref": latest["ref"],
+        "status": latest["status"],
+        "preview": latest["result_text"][:600],
+        "truncated": len(latest["result_text"]) > 600,
+        "url": url_for("report_detail", ref=latest["ref"]),
+    }
+    return data
 
 
 def recent_tasks(conn, limit: int) -> list[dict]:
@@ -1144,6 +1192,21 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.get("/api/state")
     def api_state():
         return jsonify(state_payload())
+
+    @app.get("/api/tasks/<ref>")
+    def api_task_detail(ref):
+        row = db().execute(TASK_SELECT + "WHERE t.ref = ?", (ref,)).fetchone()
+        if row is None:
+            return jsonify(error="Task not found."), 404
+        return jsonify(task=task_full(row))
+
+    @app.get("/api/employees/<int:employee_id>")
+    def api_employee_detail(employee_id):
+        conn = db()
+        emp = conn.execute("SELECT * FROM employees WHERE id = ?", (employee_id,)).fetchone()
+        if emp is None:
+            return jsonify(error="Employee not found."), 404
+        return jsonify(employee=employee_detail(conn, emp))
 
     @app.post("/api/tasks")
     def api_create_task():

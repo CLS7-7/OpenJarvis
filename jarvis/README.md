@@ -115,6 +115,23 @@ All requests carry `Authorization: Bearer <BRIDGE_SECRET>`.
 - **Status mapping:** a bridge status of `queued` shows as *Sent to Hermes*. Unknown statuses or malformed payloads are ignored rather than guessed. Progress is only what the bridge reports, except that a `done` with no progress value is shown as 100.
 - **Bridge status:** *Connected* means the bridge answered successfully within the last 45 seconds.
 
+## Dashboard API (login required, JSON)
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/state` | Employees with live status, bridge state (incl. `last_ok` / `last_fail` contact times), voice flag, the 8 most recent tasks, a `stats` block, server time. Polled every 5 s by the dashboard. |
+| `GET /api/tasks/<ref>` | One task with every stored field: command text, full result text, `created_at`, `sent_at`, `started_at`, `updated_at`, `finished_at`. 404 JSON if unknown. |
+| `GET /api/employees/<id>` | The employee with current task, last 10 tasks, per-status counts and a preview of its latest result. 404 JSON if unknown. |
+| `POST /api/tasks` | Creates a task (text or voice) and forwards it to Hermes. |
+| `GET /api/voice/token` | Short-lived ElevenLabs conversation token. |
+
+The `sent_at` and `started_at` columns are added automatically to existing databases on boot. They record when Hermes accepted a task and when it first reported `working`. Tasks created before this change show those steps as "time not recorded".
+
+The dashboard has one poller (`dashboard.js`):
+- It broadcasts each state as an `abuai:state` event.
+- It diffs consecutive states into the live-feed events (task created, handed to Hermes, work started, completed, failed, Hermes connected or lost). The first load seeds silently.
+- Open holo-windows (`windows.js`) refresh their own data on each `abuai:state` event.
+
 ## Voice flow
 
 1. When you press **Talk**, the browser asks for microphone permission. A denial is shown as a plain message.

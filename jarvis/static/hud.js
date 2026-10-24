@@ -52,6 +52,18 @@
     if (completed) celebrate();
   }
 
+  /* One data pulse per real hand-off to Hermes (core -> Hermes, then Hermes -> team). */
+  function onFeed(event) {
+    var sent = event.detail.events.some(function (e) { return e.kind === "sent"; });
+    if (!sent || reduceMotion.matches) return;
+    document.querySelectorAll(".link-line").forEach(function (line) {
+      line.classList.remove("is-burst");
+      void line.offsetWidth; // restart the one-shot animation
+      line.classList.add("is-burst");
+      setTimeout(function () { line.classList.remove("is-burst"); }, 1800);
+    });
+  }
+
   function onVoiceState(event) {
     voiceState = event.detail.state;
     voiceMode = event.detail.mode;
@@ -206,6 +218,7 @@
     seedParticles();
     document.addEventListener("abuai:state", onState);
     document.addEventListener("abuai:voice-state", onVoiceState);
+    document.addEventListener("abuai:feed", onFeed);
     document.addEventListener("visibilitychange", syncMotion);
     if (reduceMotion.addEventListener) reduceMotion.addEventListener("change", syncMotion);
     window.addEventListener("resize", function () { if (rafId === null) drawWave(0); });

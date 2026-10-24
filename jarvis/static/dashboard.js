@@ -111,35 +111,135 @@
     node.textContent = working + " of " + employees.length + " working";
   }
 
-  function renderWorkflow(tasks, bridge) {
-    var panel = document.getElementById("workflow");
+  function bridgeKey(bridge) {
+    if (bridge.connected) return "connected";
+    return bridge.configured ? "unreachable" : "unconfigured";
+  }
+
+  function renderLinkMap(state) {
+    var panel = document.getElementById("link-map");
     if (!panel) return;
+    var bridge = state.bridge;
+    var key = bridgeKey(bridge);
+    var tasks = state.recent_tasks;
     var latest = tasks.length ? tasks[0] : null;
-    var st = latest ? latest.status : "";
-    var lit = {
-      command: !!latest,
-      employee: !!latest,
-      hermes: ["sent", "working", "done", "failed"].indexOf(st) !== -1,
-      result: st === "done" || st === "failed"
-    };
-    var active = { queued: "employee", sent: "hermes", working: "hermes", done: "result", failed: "result" }[st] || "";
+    var anyWorking = state.employees.some(function (e) { return e.status === "working"; });
+    panel.dataset.bridge = key;
     panel.classList.toggle("is-empty", !latest);
-    panel.dataset.status = st;
-    panel.querySelectorAll(".flow-node").forEach(function (node) {
-      var stage = node.dataset.stage;
-      node.classList.toggle("is-lit", !!lit[stage]);
-      node.classList.toggle("is-active", active === stage);
-      node.classList.toggle("is-failed", stage === "result" && st === "failed");
+
+    var orb = document.getElementById("hermes-orb");
+    if (orb) {
+      orb.dataset.bridge = key;
+      orb.setAttribute("aria-label", "Open Hermes link details: " + bridge.label);
+    }
+    setText("hermes-label", bridge.label);
+    panel.querySelectorAll(".link-line").forEach(function (line) {
+      line.classList.toggle("is-flowing", anyWorking);
     });
+    state.employees.forEach(function (emp) {
+      var bot = panel.querySelector('[data-link-employee="' + emp.id + '"]');
+      if (!bot) return;
+      bot.classList.toggle("is-working", emp.status === "working");
+      bot.setAttribute("aria-label", "Open " + emp.name + " details — " + emp.status_label);
+    });
+
     var caption = document.getElementById("flow-caption");
     if (!caption) return;
+    caption.textContent = "";
     if (!latest) {
-      caption.textContent = "No tasks yet — the flow lights up as your first command moves through it.";
+      caption.textContent = "No tasks yet — the link lights up as your first command moves through Hermes.";
       return;
     }
-    var text = latest.ref + " · " + latest.employee_name + " · " + latest.status_label;
-    if (st === "queued" && !bridge.connected) text += " — waiting for bridge";
-    caption.textContent = text;
+    var open = el("button", "inline-link", latest.ref);
+    open.type = "button";
+    open.dataset.openTask = latest.ref;
+    open.setAttribute("aria-label", "Open task " + latest.ref);
+    caption.appendChild(open);
+    var text = " · " + latest.employee_name + " · " + latest.status_label;
+    if (latest.status === "queued" && !bridge.connected) text += " — waiting for bridge";
+    caption.appendChild(document.createTextNode(text));
+  }
+
+  /* ---------- live feed: real transitions between successive states ---------- */
+  var FEED_MAX = 20;
+  var feedSeeded = false;
+  var previousTasks = null;
+  var previousBridge = null;
+  var feedClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  function taskMap(state) {
+    var map = {};
+    state.recent_tasks.forEach(function (t) { map[t.ref] = t; });
+    state.employees.forEach(function (e) {
+      if (e.current_task) map[e.current_task.ref] = e.current_task;
+    });
+    return map;
+  }
+
+  var STATUS_EVENTS = {
+    sent: { kind: "sent", text: "handed to Hermes" },
+    working: { kind: "working", text: "work started" },
+    done: { kind: "done", text: "completed" },
+    failed: { kind: "failed", text: "failed" }
+  };
+
+  function diffState(state) {
+    var tasks = taskMap(state);
+    var events = [];
+    if (!feedSeeded) {
+      feedSeeded = true;
+      previousTasks = tasks;
+      previousBridge = state.bridge;
+      return events;
+    }
+    var maxPrevId = 0;
+    Object.keys(previousTasks).forEach(function (ref) { maxPrevId = Math.max(maxPrevId, previousTasks[ref].id); });
+    Object.keys(tasks).sort().forEach(function (ref) {
+      var t = tasks[ref];
+      var before = previousTasks[ref];
+      if (!before) {
+        if (t.id <= maxPrevId) return; // an older task scrolling into view is not a new event
+        events.push({ kind: "created", ref: ref, text: "created for " + t.employee_name + " — " + t.title });
+        if (STATUS_EVENTS[t.status]) events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
+      } else if (before.status !== t.status && STATUS_EVENTS[t.status]) {
+        events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
+      }
+    });
+    if (previousBridge && previousBridge.connected !== state.bridge.connected) {
+      events.push(state.bridge.connected
+        ? { kind: "bridge-up", text: "Hermes connected" }
+        : { kind: "bridge-down", text: state.bridge.configured ? "Hermes connection lost" : "Hermes not configured" });
+    }
+    previousTasks = tasks;
+    previousBridge = state.bridge;
+    return events;
+  }
+
+  function renderFeed(events, serverTime) {
+    var list = document.getElementById("live-feed");
+    if (!list || !events.length) return;
+    var empty = list.querySelector(".feed-empty");
+    if (empty) empty.remove();
+    var stamp = serverTime ? new Date(serverTime) : new Date();
+    var clock = isNaN(stamp.getTime()) ? "" : feedClock.format(stamp);
+    events.forEach(function (ev) {
+      var li = el("li", "feed-item feed-" + ev.kind);
+      var time = el("time", "feed-time", clock);
+      if (serverTime) time.setAttribute("datetime", serverTime);
+      li.appendChild(time);
+      li.appendChild(el("span", "feed-dot"));
+      if (ev.ref) {
+        var btn = el("button", "feed-ref inline-link", ev.ref);
+        btn.type = "button";
+        btn.dataset.openTask = ev.ref;
+        btn.setAttribute("aria-label", "Open task " + ev.ref);
+        li.appendChild(btn);
+      }
+      li.appendChild(el("span", "feed-text", ev.text));
+      list.insertBefore(li, list.firstChild);
+    });
+    while (list.children.length > FEED_MAX) list.removeChild(list.lastChild);
+    document.dispatchEvent(new CustomEvent("abuai:feed", { detail: { events: events } }));
   }
 
   function setText(id, value) {
@@ -175,6 +275,8 @@
       var li = el("li", "task-row");
       var a = el("a", "task-link");
       a.href = task.url;
+      a.dataset.openTask = task.ref;
+      a.setAttribute("aria-label", "Open task " + task.ref + ": " + task.title);
       a.appendChild(statusIcon(task.status));
       a.appendChild(el("span", "task-ref", task.ref));
       a.appendChild(el("span", "task-title", task.title));
@@ -207,9 +309,10 @@
     renderEmployees(state.employees);
     renderDeskHolo(state.employees);
     renderRecent(state.recent_tasks);
-    renderWorkflow(state.recent_tasks, state.bridge);
+    renderLinkMap(state);
     renderStats(state.stats);
     renderVoice(state.voice);
+    renderFeed(diffState(state), state.server_time);
     document.dispatchEvent(new CustomEvent("abuai:state", { detail: state }));
   }
 
@@ -301,7 +404,9 @@
     refresh: refresh,
     createTask: createTask,
     describeCreated: describeCreated,
-    employeeName: employeeName
+    employeeName: employeeName,
+    statusIcon: statusIcon,
+    lastState: function () { return lastState; }
   };
 
   document.addEventListener("DOMContentLoaded", function () {

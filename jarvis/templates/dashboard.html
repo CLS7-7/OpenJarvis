@@ -8,6 +8,7 @@
 <p id="bridge-banner" class="alert alert-warn banner" role="status" {% if state.bridge.connected %}hidden{% endif %}>
   <span class="dot dot-warn" aria-hidden="true"></span>
   <span>Bridge not connected — tasks will send when Hermes is connected.</span>
+  <button type="button" class="btn btn-ghost btn-sm banner-action" data-open-window="hermes" aria-label="Open Hermes link details">Hermes details</button>
 </p>
 
 {%- set working_count = state.employees | selectattr('status', 'equalto', 'working') | list | length %}
@@ -84,6 +85,9 @@
         {% set phase = 'working' if emp.status == 'working' else ('alert' if t and t.status in ('queued', 'sent') else ('done' if emp.status == 'done' else 'idle')) %}
         <li class="emp-card{% if emp.status == 'working' %} is-working{% endif %}" data-employee-id="{{ emp.id }}" data-status="{{ emp.status }}" data-phase="{{ phase }}" data-color="{{ emp.color }}">
           <div class="seat-stage">
+            <button type="button" class="seat-open" data-open-employee="{{ emp.id }}" aria-label="Open {{ emp.name }} details">
+              <span class="seat-open-hint" aria-hidden="true">Open</span>
+            </button>
             <span class="seat-beam" aria-hidden="true"></span>
             <span class="seat-spot" aria-hidden="true"></span>
             <div class="robot-wrap">{{ robot(emp) }}</div>
@@ -116,7 +120,7 @@
     <ul class="task-list" id="recent-tasks">
       {% for task in state.recent_tasks %}
       <li class="task-row">
-        <a href="{{ task.url }}" class="task-link">
+        <a href="{{ task.url }}" class="task-link" data-open-task="{{ task.ref }}" aria-label="Open task {{ task.ref }}: {{ task.title }}">
           <span class="task-icon status-{{ task.status }}">{{ status_icon(task.status) }}</span>
           <span class="task-ref">{{ task.ref }}</span>
           <span class="task-title">{{ task.title }}</span>
@@ -134,35 +138,53 @@
     <p class="panel-foot"><a class="link-strong" href="{{ url_for('reports') }}">View all reports</a></p>
   </section>
 
-  {# ---- Automation workflow ---------------------------------------- #}
-  {%- set st = latest.status if latest else '' %}
-  {%- set lit = {
-      'command': latest is not none,
-      'employee': latest is not none,
-      'hermes': st in ('sent', 'working', 'done', 'failed'),
-      'result': st in ('done', 'failed'),
-  } %}
-  {%- set active = {'queued': 'employee', 'sent': 'hermes', 'working': 'hermes', 'done': 'result', 'failed': 'result'}.get(st, '') %}
-  <section class="panel holo holo-flow{% if not latest %} is-empty{% endif %}" id="workflow" aria-labelledby="flow-title" data-status="{{ st }}">
-    <h2 id="flow-title" class="panel-title">Automation workflow</h2>
-    <ol class="flow">
-      {% for key, label in [('command', 'Command'), ('employee', 'Employee'), ('hermes', 'Hermes'), ('result', 'Result')] %}
-      <li class="flow-node{% if lit[key] %} is-lit{% endif %}{% if active == key %} is-active{% endif %}{% if key == 'result' and st == 'failed' %} is-failed{% endif %}" data-stage="{{ key }}">
-        <span class="flow-dot" aria-hidden="true"></span>
-        <span class="flow-label">{{ label }}</span>
-      </li>
-      {% endfor %}
-    </ol>
+  {# ---- Hermes link map ------------------------------------------- #}
+  {%- set any_working = working_count > 0 %}
+  {%- set bstate = 'connected' if state.bridge.connected else ('unreachable' if state.bridge.configured else 'unconfigured') %}
+  <section class="panel holo holo-link{% if not latest %} is-empty{% endif %}" id="link-map" aria-labelledby="link-title" data-bridge="{{ bstate }}">
+    <h2 id="link-title" class="panel-title">Hermes link</h2>
+    <div class="link-map">
+      <div class="link-node link-core" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false"><circle cx="32" cy="32" r="27" fill="none" stroke="#22D3EE" stroke-width="2" stroke-dasharray="20 8"/><circle cx="32" cy="32" r="12" fill="#22D3EE" opacity=".35"/><circle cx="32" cy="32" r="6" fill="#E6FBFF"/></svg>
+        <span class="link-node-label">Jarvis</span>
+      </div>
+      <div class="link-line{% if any_working %} is-flowing{% endif %}" data-line="core-hermes" aria-hidden="true"><span class="link-track"><span class="link-pulse"></span></span></div>
+      <button type="button" class="link-node link-hermes" id="hermes-orb" data-open-window="hermes" data-bridge="{{ bstate }}" aria-label="Open Hermes link details: {{ state.bridge.label }}">
+        <span class="hermes-orb" aria-hidden="true"><span class="hermes-orb-core"></span><span class="hermes-orb-slash"></span></span>
+        <span class="link-node-label">Hermes</span>
+        <span class="hermes-label" id="hermes-label">{{ state.bridge.label }}</span>
+      </button>
+      <div class="link-line{% if any_working %} is-flowing{% endif %}" data-line="hermes-team" aria-hidden="true"><span class="link-track"><span class="link-pulse"></span></span></div>
+      <ul class="link-team" aria-label="Employees">
+        {% for emp in state.employees %}
+        <li><button type="button" class="link-bot{% if emp.status == 'working' %} is-working{% endif %}" data-open-employee="{{ emp.id }}" data-link-employee="{{ emp.id }}" aria-label="Open {{ emp.name }} details — {{ emp.status_label }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="16" height="13" rx="6" fill="#EEF3FB"/><rect x="7" y="9" width="10" height="5" rx="2.5" fill="#0B1222"/><circle cx="10" cy="11.5" r="1.3" fill="{{ emp.color }}"/><circle cx="14" cy="11.5" r="1.3" fill="{{ emp.color }}"/><rect x="9" y="19" width="6" height="3" rx="1.5" fill="{{ emp.color }}"/></svg>
+        </button></li>
+        {% endfor %}
+      </ul>
+    </div>
     <p class="flow-caption" id="flow-caption">
-      {%- if latest %}{{ latest.ref }} · {{ latest.employee_name }} · {{ latest.status_label }}{% if st == 'queued' and not state.bridge.connected %} — waiting for bridge{% endif %}
-      {%- else %}No tasks yet — the flow lights up as your first command moves through it.{% endif -%}
+      {%- if latest %}<button type="button" class="inline-link" data-open-task="{{ latest.ref }}" aria-label="Open task {{ latest.ref }}">{{ latest.ref }}</button> · {{ latest.employee_name }} · {{ latest.status_label }}{% if latest.status == 'queued' and not state.bridge.connected %} — waiting for bridge{% endif %}
+      {%- else %}No tasks yet — the link lights up as your first command moves through Hermes.{% endif -%}
     </p>
+  </section>
+
+  {# ---- Live feed --------------------------------------------------- #}
+  <section class="panel holo holo-feed" aria-labelledby="feed-title">
+    <div class="section-head">
+      <h2 id="feed-title" class="panel-title">Live feed</h2>
+      <p class="feed-live"><span class="voice-live-dot" aria-hidden="true"></span>Watching</p>
+    </div>
+    <ol class="feed-list" id="live-feed" aria-live="polite" aria-relevant="additions">
+      <li class="feed-empty">Events appear here the moment they happen: new tasks, hand-offs to Hermes, work starting and finishing, and the Hermes connection changing.</li>
+    </ol>
   </section>
 
   {# ---- Analytics -------------------------------------------------- #}
   {%- set rate = stats.completion_rate %}
   <section class="panel holo holo-analytics" aria-labelledby="stats-title">
-    <h2 id="stats-title" class="panel-title">AI analytics</h2>
+    <button type="button" class="panel-hit" id="open-stats" data-open-window="stats" aria-label="Open AI analytics details"></button>
+    <h2 id="stats-title" class="panel-title">AI analytics <span class="panel-open-hint" aria-hidden="true">Open</span></h2>
     <div class="analytics">
       <figure class="gauge" aria-labelledby="gauge-caption">
         <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">
@@ -184,10 +206,15 @@
     <p class="muted small panel-foot" id="stat-total">{{ stats.total }} task{{ '' if stats.total == 1 else 's' }} recorded in total.</p>
   </section>
 </div>
+
+<div class="holo-stage" id="holo-stage">
+  <div class="holo-scrim" id="holo-scrim" hidden></div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.26.0/dist/lib.iife.js" integrity="sha384-GAgUf1yx/dGreo/QTqLRVycB5sMQdsPKOmbMWlKec+fjMXzz+OXy4c6EfjB7Anb7" crossorigin="anonymous" defer></script>
 <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
 <script src="{{ url_for('static', filename='voice.js') }}" defer></script>
 <script src="{{ url_for('static', filename='hud.js') }}" defer></script>
+<script src="{{ url_for('static', filename='windows.js') }}" defer></script>
 {% endblock %}

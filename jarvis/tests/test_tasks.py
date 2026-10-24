@@ -134,7 +134,9 @@ def test_bridge_not_configured_is_honest(client, logged_in):
     task = resp.get_json()["task"]
     assert task["status"] == "queued" and task["progress"] == 0
     state = client.get("/api/state").get_json()
-    assert state["bridge"] == {"configured": False, "connected": False, "label": "Not configured"}
+    assert state["bridge"] == {
+        "configured": False, "connected": False, "label": "Not configured", "last_ok": None, "last_fail": None,
+    }
     emp = next(e for e in state["employees"] if e["id"] == 1)
     assert emp["status"] == "idle" and emp["progress"] == 0
     html = client.get("/").get_data(as_text=True)
