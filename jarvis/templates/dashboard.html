@@ -41,7 +41,7 @@
       <svg class="chat-bubble chat-bubble-r" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path d="M42 4H6a4 4 0 0 0-4 4v18a4 4 0 0 0 4 4h22l9 7v-7h5a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4Z" fill="none" stroke="#7C5CFF" stroke-width="1.6"/><circle cx="16" cy="17" r="2" fill="#7C5CFF"/><circle cx="24" cy="17" r="2" fill="#7C5CFF"/><circle cx="32" cy="17" r="2" fill="#7C5CFF"/></svg>
     </div>
     <p id="voice-status" class="voice-status" role="status" aria-live="polite">
-      {%- if state.voice.configured %}Press Talk, speak your command, then end the conversation. It goes to the employee picked in the command panel.{% else %}Voice will be available once the ElevenLabs agent is configured on the server.{% endif -%}
+      {%- if state.voice.configured %}Press Talk and give Jarvis your order. Your agent passes it to Hermes, and the task appears here when Hermes reports it.{% else %}Voice will be available once the ElevenLabs agent is configured on the server.{% endif -%}
     </p>
   </section>
 
@@ -124,7 +124,7 @@
           <span class="task-icon status-{{ task.status }}">{{ status_icon(task.status) }}</span>
           <span class="task-ref">{{ task.ref }}</span>
           <span class="task-title">{{ task.title }}</span>
-          <span class="task-meta muted small">{{ task.employee_name }} · <time datetime="{{ task.created_at }}">{{ task.created_human }}</time>{% if task.source == 'voice' %} · voice{% endif %}</span>
+          <span class="task-meta muted small">{{ task.employee_name }} · <time datetime="{{ task.created_at }}">{{ task.created_human }}</time>{% if task.source != 'text' %} · {{ task.source_label | lower }}{% endif %}</span>
           <span class="status status-{{ task.status }}">{{ task.status_label }}</span>
         </a>
       </li>

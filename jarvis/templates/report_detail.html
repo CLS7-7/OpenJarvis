@@ -10,7 +10,7 @@
   <h2 id="detail-meta" class="sr-only">Details</h2>
   <dl class="meta-grid">
     <div><dt>Assigned to</dt><dd>{{ task.employee_name }}</dd></div>
-    <div><dt>Source</dt><dd>{{ 'Voice' if task.source == 'voice' else 'Text' }}</dd></div>
+    <div><dt>Source</dt><dd>{{ task.source_label }}</dd></div>
     <div><dt>Created</dt><dd><time datetime="{{ task.created_at }}">{{ task.created_human }}</time></dd></div>
     <div><dt>Finished</dt><dd>{% if task.finished_at %}<time datetime="{{ task.finished_at }}">{{ task.finished_human }}</time>{% else %}Not finished{% endif %}</dd></div>
     <div><dt>Duration</dt><dd>{{ task.duration or '—' }}</dd></div>

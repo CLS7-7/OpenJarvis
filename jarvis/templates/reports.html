@@ -16,7 +16,7 @@
       <tr>
         <td data-label="Task"><a href="{{ task.url }}" class="task-ref">{{ task.ref }}</a></td>
         <td data-label="Assigned to">{{ task.employee_name }}</td>
-        <td data-label="Command" class="cell-command">{{ task.title }}{% if task.source == 'voice' %} <span class="tag">voice</span>{% endif %}</td>
+        <td data-label="Command" class="cell-command">{{ task.title }}{% if task.source != 'text' %} <span class="tag">{{ task.source_label | lower }}</span>{% endif %}</td>
         <td data-label="Status"><span class="status status-{{ task.status }}">{{ task.status_label }}</span></td>
         <td data-label="Created"><time datetime="{{ task.created_at }}">{{ task.created_human }}</time></td>
         <td data-label="Finished">{% if task.finished_at %}<time datetime="{{ task.finished_at }}">{{ task.finished_human }}</time>{% else %}<span class="muted">—</span>{% endif %}</td>

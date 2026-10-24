@@ -199,8 +199,14 @@
       var before = previousTasks[ref];
       if (!before) {
         if (t.id <= maxPrevId) return; // an older task scrolling into view is not a new event
-        events.push({ kind: "created", ref: ref, text: "created for " + t.employee_name + " — " + t.title });
-        if (STATUS_EVENTS[t.status]) events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
+        if (t.source === "text") {
+          events.push({ kind: "created", ref: ref, text: "created for " + t.employee_name + " — " + t.title });
+          if (STATUS_EVENTS[t.status]) events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
+        } else {
+          // Came in from Hermes (voice agent or another channel): the site did not hand it over.
+          events.push({ kind: "created", ref: ref, text: "reported by Hermes (" + t.source_label.toLowerCase() + ") for " + t.employee_name + " — " + t.title });
+          if (t.status !== "sent" && STATUS_EVENTS[t.status]) events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
+        }
       } else if (before.status !== t.status && STATUS_EVENTS[t.status]) {
         events.push({ kind: STATUS_EVENTS[t.status].kind, ref: ref, text: STATUS_EVENTS[t.status].text + " · " + t.employee_name });
       }
@@ -285,7 +291,7 @@
       var time = el("time", "", task.created_human);
       time.setAttribute("datetime", task.created_at);
       meta.appendChild(time);
-      if (task.source === "voice") meta.appendChild(document.createTextNode(" · voice"));
+      if (task.source !== "text") meta.appendChild(document.createTextNode(" · " + task.source_label.toLowerCase()));
       a.appendChild(meta);
       a.appendChild(el("span", "status status-" + task.status, task.status_label));
       li.appendChild(a);

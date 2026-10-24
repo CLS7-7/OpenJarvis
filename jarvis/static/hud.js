@@ -17,8 +17,7 @@
     idle: "Standing by",
     connecting: "Connecting",
     live: "Live",
-    ending: "Ending",
-    submitting: "Sending command"
+    ending: "Ending"
   };
 
   /* ---------- core state (real data only) ---------- */

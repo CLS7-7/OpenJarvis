@@ -21,17 +21,16 @@
     button.dataset.state = next;
     if (mode) button.dataset.mode = mode; else delete button.dataset.mode;
     button.setAttribute("aria-pressed", next === "live" ? "true" : "false");
-    button.disabled = next === "unconfigured" || next === "connecting" || next === "submitting";
+    button.disabled = next === "unconfigured" || next === "connecting";
     var labels = {
       unconfigured: "Voice not configured yet",
       idle: "Talk to Jarvis",
       connecting: "Connecting…",
       live: mode === "speaking" ? "Jarvis speaking… · End conversation" : "Listening… · End conversation",
-      ending: "Ending…",
-      submitting: "Sending command…"
+      ending: "Ending…"
     };
     labelNode.textContent = labels[next] || "Talk to Jarvis";
-    button.setAttribute("aria-busy", next === "connecting" || next === "submitting" ? "true" : "false");
+    button.setAttribute("aria-busy", next === "connecting" ? "true" : "false");
     document.dispatchEvent(new CustomEvent("abuai:voice-state", { detail: { state: next, mode: mode || "" } }));
   }
 
@@ -97,7 +96,7 @@
     if (finalized) return;
     finalized = true;
     conversation = null;
-    if (leaving) return; // page is unloading: nothing is submitted out of sight
+    if (leaving) return; // page is unloading
     var text = transcript.join("\n").trim();
     transcript = [];
     if (!text || !substantive(text)) {
@@ -105,20 +104,23 @@
       setStatus("warn", "No command captured from that conversation.");
       return;
     }
-    var picker = document.getElementById("employee-picker");
-    var employeeId = picker ? picker.value : "";
-    var dash = window.abuai.dashboard;
-    setState("submitting");
-    setStatus("", "Sending your voice command to " + dash.employeeName(employeeId) + "…");
-    dash.createTask(employeeId, text, "voice")
-      .then(function (data) {
-        var outcome = dash.describeCreated(data, "Voice command");
-        setStatus(outcome.kind, outcome.text);
-      })
-      .catch(function (err) {
-        setStatus("error", "The voice command could not be saved: " + err.message);
-      })
-      .then(function () { setState(configured ? "idle" : "unconfigured"); });
+    // The ElevenLabs agent hands voice orders to Hermes itself, so nothing is submitted from here:
+    // Hermes reports the task back through /api/bridge/report and it shows up live on the dashboard.
+    setState(configured ? "idle" : "unconfigured");
+    showHeard(text);
+  }
+
+  function showHeard(text) {
+    statusNode.className = "voice-status voice-heard is-ok";
+    statusNode.textContent = "";
+    var heard = document.createElement("span");
+    heard.className = "voice-heard-text";
+    heard.textContent = "Heard: " + text;
+    var note = document.createElement("span");
+    note.className = "voice-heard-note";
+    note.textContent = "Your agent passes voice orders to Hermes — the task appears here as soon as Hermes reports it.";
+    statusNode.appendChild(heard);
+    statusNode.appendChild(note);
   }
 
   function start() {
@@ -194,7 +196,7 @@
       setStatus("", "Voice will be available once the ElevenLabs agent is configured on the server.");
     } else if (configured && state === "unconfigured") {
       setState("idle");
-      setStatus("", "Press Talk, speak your command, then end the conversation. It goes to the employee picked below.");
+      setStatus("", "Press Talk and give Jarvis your order. Your agent passes it to Hermes, and the task appears here when Hermes reports it.");
     }
   }
 

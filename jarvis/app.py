@@ -70,6 +70,8 @@ POLL_INTERVAL = 5.0
 FORWARD_GRACE_SECONDS = 20
 ELEVENLABS_TOKEN_URL = "https://api.elevenlabs.io/v1/convai/conversation/token"
 
+SOURCE_LABELS = {"text": "Text", "voice": "Voice", "external": "Via Hermes"}
+
 STATUS_LABELS = {
     "queued": "Queued",
     "sent": "Sent to Hermes",
@@ -85,6 +87,27 @@ EMPLOYEE_SEED = (
     ("EMPLOYEE_4", "#FFB020", "cap"),
     ("EMPLOYEE_5", "#38BDF8", "headphones"),
 )
+
+TASKS_TABLE = """CREATE TABLE IF NOT EXISTS {name} (
+    id INTEGER PRIMARY KEY,
+    ref TEXT NOT NULL UNIQUE,
+    employee_id INTEGER NOT NULL REFERENCES employees(id),
+    command_text TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('text', 'voice', 'external')),
+    status TEXT NOT NULL CHECK (status IN ('queued', 'sent', 'working', 'done', 'failed')),
+    progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+    result_text TEXT,
+    bridge_task_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    sent_at INTEGER,
+    started_at INTEGER
+);"""
+TASKS_INDEXES = """CREATE INDEX IF NOT EXISTS idx_tasks_employee ON tasks(employee_id, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);"""
+TASK_COLUMNS = ("id, ref, employee_id, command_text, source, status, progress, result_text, bridge_task_id, "
+                "created_at, updated_at, finished_at, sent_at, started_at")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -120,27 +143,13 @@ CREATE TABLE IF NOT EXISTS employees (
     avatar_style TEXT NOT NULL,
     sort INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY,
-    ref TEXT NOT NULL UNIQUE,
-    employee_id INTEGER NOT NULL REFERENCES employees(id),
-    command_text TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('text', 'voice')),
-    status TEXT NOT NULL CHECK (status IN ('queued', 'sent', 'working', 'done', 'failed')),
-    progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
-    result_text TEXT,
-    bridge_task_id TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    finished_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_employee ON tasks(employee_id, id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+{tasks_table}
+{tasks_indexes}
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-"""
+""".replace("{tasks_table}", TASKS_TABLE.replace("{name}", "tasks")).replace("{tasks_indexes}", TASKS_INDEXES)
 
 
 def now() -> int:
@@ -180,6 +189,7 @@ def init_db(db_path: str) -> None:
         for column in ("sent_at", "started_at"):
             if column not in columns:  # additive migration for the task timeline
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} INTEGER")
+        migrate_task_sources(conn)
         for sort, (key, color, style) in enumerate(EMPLOYEE_SEED, start=1):
             conn.execute(
                 "INSERT OR IGNORE INTO employees (key, name, color, avatar_style, sort) VALUES (?, ?, ?, ?, ?)",
@@ -187,6 +197,31 @@ def init_db(db_path: str) -> None:
             )
     finally:
         conn.close()
+
+
+def migrate_task_sources(conn) -> None:
+    """Rebuild the tasks table once so its CHECK constraint allows source 'external'."""
+    def needs_rebuild():
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'").fetchone()
+        return row is not None and "'external'" not in row[0]
+
+    if not needs_rebuild():
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if needs_rebuild():  # another worker may have finished it while we waited for the lock
+            conn.execute("DROP TABLE IF EXISTS tasks_rebuild")
+            conn.execute(TASKS_TABLE.replace("{name}", "tasks_rebuild"))
+            conn.execute(f"INSERT INTO tasks_rebuild ({TASK_COLUMNS}) SELECT {TASK_COLUMNS} FROM tasks")
+            conn.execute("DROP TABLE tasks")
+            conn.execute("ALTER TABLE tasks_rebuild RENAME TO tasks")
+            for statement in TASKS_INDEXES.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
 
 def db() -> sqlite3.Connection:
@@ -478,6 +513,96 @@ def apply_bridge_update(conn, task_id: int, data: dict) -> None:
     )
 
 
+REPORT_FIELDS = {"ref", "employee_key", "command_text", "source", "status", "progress", "result"}
+REPORT_REF_RE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+REPORT_RATE_PER_MINUTE = 120
+REPORT_MAX_BYTES = 1024 * 1024
+# Inbound 'queued' means Hermes already holds the task, which the site calls 'sent'.
+REPORT_STATUS_MAP = {"queued": "sent", "working": "working", "done": "done", "failed": "failed"}
+STATUS_RANK = {"queued": 0, "sent": 0, "working": 1, "done": 2, "failed": 2}
+
+
+def validate_report(payload):
+    """Return (clean_dict, None) or (None, error_message) for a Hermes report body."""
+    if not isinstance(payload, dict):
+        return None, "Expected a JSON object."
+    unknown = set(payload) - REPORT_FIELDS
+    if unknown:
+        return None, "Unknown field(s): " + ", ".join(sorted(unknown)) + "."
+    ref = payload.get("ref")
+    if not isinstance(ref, str) or not REPORT_REF_RE.fullmatch(ref):
+        return None, "ref must be 1-64 characters of A-Z a-z 0-9 . _ : -"
+    employee_key = payload.get("employee_key")
+    if employee_key not in {key for key, _, _ in EMPLOYEE_SEED}:
+        return None, "employee_key must be one of EMPLOYEE_1..EMPLOYEE_5."
+    command = payload.get("command_text")
+    command = command.strip() if isinstance(command, str) else ""
+    if not command or len(command) > COMMAND_MAX_CHARS:
+        return None, f"command_text must be 1-{COMMAND_MAX_CHARS} characters."
+    source = payload.get("source", "external")
+    if source not in ("voice", "external"):
+        return None, "source must be 'voice' or 'external'."
+    status = payload.get("status", "queued")
+    if status not in REPORT_STATUS_MAP:
+        return None, "status must be one of queued, working, done, failed."
+    progress = payload.get("progress")
+    if progress is not None and (isinstance(progress, bool) or not isinstance(progress, int) or not 0 <= progress <= 100):
+        return None, "progress must be an integer from 0 to 100."
+    result = payload.get("result")
+    if result is not None and not isinstance(result, str):
+        return None, "result must be a string."
+    return {
+        "ref": ref, "employee_key": employee_key, "command_text": command, "source": source,
+        "status": REPORT_STATUS_MAP[status], "progress": progress,
+        "result": result[:RESULT_MAX_CHARS] if result is not None else None,
+    }, None
+
+
+def upsert_report(conn, report) -> tuple[int, bool]:
+    """Create or update the task for a Hermes report. Returns (task_id, created)."""
+    t = now()
+    status = report["status"]
+    terminal = status in ("done", "failed")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT * FROM tasks WHERE ref = ?", (report["ref"],)).fetchone()
+        if row is None:
+            emp = conn.execute("SELECT id FROM employees WHERE key = ?", (report["employee_key"],)).fetchone()
+            progress = report["progress"] if report["progress"] is not None else (100 if status == "done" else 0)
+            cur = conn.execute(
+                "INSERT INTO tasks (ref, employee_id, command_text, source, status, progress, result_text, "
+                "created_at, updated_at, finished_at, sent_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (report["ref"], emp["id"], report["command_text"], report["source"], status, progress, report["result"],
+                 t, t, t if terminal else None, t, t if status == "working" else None),
+            )
+            conn.execute("COMMIT")
+            return cur.lastrowid, True
+
+        current = row["status"]
+        if current in ("done", "failed") or STATUS_RANK[status] < STATUS_RANK[current]:
+            conn.execute("COMMIT")  # never move a task back to an earlier state
+            return row["id"], False
+        progress = row["progress"]
+        if report["progress"] is not None:
+            progress = report["progress"]
+        elif status == "done":
+            progress = 100
+        result = report["result"] if report["result"] is not None else row["result_text"]
+        conn.execute(
+            "UPDATE tasks SET status = ?, progress = ?, result_text = ?, updated_at = ?, "
+            "finished_at = COALESCE(finished_at, ?), started_at = COALESCE(started_at, ?), sent_at = COALESCE(sent_at, ?) "
+            "WHERE id = ?",
+            (status, progress, result, t, t if terminal else None, t if status == "working" else None,
+             t if current == "queued" else None, row["id"]),
+        )
+        conn.execute("COMMIT")
+        return row["id"], False
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
 class Poller:
     """Background loop: forwards queued tasks and polls active ones.
 
@@ -582,6 +707,7 @@ def task_dict(row) -> dict:
         "employee_name": row["employee_name"],
         "title": short_title(row["command_text"]),
         "source": row["source"],
+        "source_label": SOURCE_LABELS.get(row["source"], row["source"]),
         "status": row["status"],
         "status_label": STATUS_LABELS[row["status"]],
         "progress": row["progress"],
@@ -703,6 +829,7 @@ def task_stats(conn) -> dict:
 # --- app factory ---------------------------------------------------------
 
 PUBLIC_ENDPOINTS = {"login", "login_totp", "setup", "static"}
+BRIDGE_REPORT_PATH = "/api/bridge/report"
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -784,6 +911,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         g.session_token = None
         g.session_id = None
         g.user = None
+        if request.method == "POST" and request.path == BRIDGE_REPORT_PATH:
+            # Machine-to-machine call from Hermes: authenticated by its Bearer secret in the view,
+            # so it skips the browser session, anonymous cookie and CSRF checks. Nothing else does.
+            g.anon_id = ""
+            request.max_content_length = REPORT_MAX_BYTES  # room for a full result text
+            return None
         raw_anon = request.cookies.get(ANON_COOKIE, "")
         try:
             g.anon_id = anon_signer.unsign(raw_anon).decode() if raw_anon else ""
@@ -1251,6 +1384,27 @@ def create_app(test_config: dict | None = None) -> Flask:
             forward_task(conn, b, task_id)
         row = conn.execute(TASK_SELECT + "WHERE t.id = ?", (task_id,)).fetchone()
         return jsonify(task=task_dict(row), bridge=bridge_state(conn, b)), 201
+
+    @app.post(BRIDGE_REPORT_PATH)
+    def api_bridge_report():
+        expected = app.config["BRIDGE_SECRET"]
+        if not expected:
+            return jsonify(error="Not found."), 404
+        conn = db()
+        ip = client_ip()
+        if count_hits(conn, "bridge_report", ip, 60) >= REPORT_RATE_PER_MINUTE:
+            return jsonify(error="Too many requests."), 429
+        conn.execute("INSERT INTO rate_hits (bucket, subject, hit_at) VALUES (?, ?, ?)", ("bridge_report", ip, now()))
+        header = request.headers.get("Authorization", "")
+        scheme, _, token = header.partition(" ")
+        if scheme != "Bearer" or not token or not hmac.compare_digest(token.encode(), expected.encode()):
+            return jsonify(error="Unauthorized."), 401
+        report, error = validate_report(request.get_json(silent=True))
+        if error:
+            return jsonify(error=error), 400
+        task_id, created = upsert_report(conn, report)
+        row = conn.execute(TASK_SELECT + "WHERE t.id = ?", (task_id,)).fetchone()
+        return jsonify(task=task_dict(row)), 201 if created else 200
 
     @app.get("/api/voice/token")
     def api_voice_token():

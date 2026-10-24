@@ -6,7 +6,7 @@ OpenJarvis package.
 
 - **Owner-only auth:** one account, created once through `/setup`. Sign-in needs a password plus a TOTP code (or a single-use recovery code).
 - **Dashboard:** a voice Talk button (ElevenLabs), a text command box, five employee cards with live status, and recent reports.
-- **Command pipeline:** text and voice commands go through the same `POST /api/tasks`. Tasks are forwarded to the Hermes bridge on the owner's desktop, and a background poller tracks their real status.
+- **Command pipeline:** typed commands go through `POST /api/tasks` and are forwarded to the Hermes bridge on the owner's desktop, where a background poller tracks their real status. Voice orders go from the owner's ElevenLabs agent to Hermes, and Hermes reports them back in through `POST /api/bridge/report`. Every task appears on the same live dashboard.
 - **Stack:** Flask, server-rendered templates and vanilla JS (no build step), SQLite in WAL mode, bcrypt and pyotp.
 
 ## Files
@@ -29,7 +29,7 @@ All variables are read on the server only. Put them in `jarvis/.env` on the VPS.
 | `SECRET_KEY` | yes | Signs cookies and CSRF tokens. The app refuses to start if it is missing or shorter than 32 characters. Generate a long random value on the server. |
 | `DATA_DIR` | no | Where the SQLite database lives. Defaults to `/data` (the named volume). |
 | `BRIDGE_URL` | no | Base URL of the Hermes bridge, e.g. its tunnel or LAN address. |
-| `BRIDGE_SECRET` | no | Bearer token for the bridge. Sent only in the server-side `Authorization` header. |
+| `BRIDGE_SECRET` | no | Shared Bearer secret. Sent in the server-side `Authorization` header to Hermes, and required from Hermes on `POST /api/bridge/report`. If unset, that endpoint is off (404). |
 | `ELEVENLABS_API_KEY` | no | Used only server-side to mint short-lived conversation tokens. |
 | `ELEVENLABS_AGENT_ID` | no | The ElevenLabs agent (with Authentication enabled). |
 
@@ -100,20 +100,56 @@ If you lose both the authenticator and the recovery codes, recover by stopping t
 - **Secrets:** the bridge secret and the ElevenLabs key never reach a template, JS, an API response or a log line. The browser only ever receives the short-lived conversation token.
 - **Errors:** no debug mode. Users see branded 404/500 pages; stack traces stay in the server log.
 
-## Hermes bridge contract
+## Hermes contract (both directions)
 
-All requests carry `Authorization: Bearer <BRIDGE_SECRET>`.
+Hermes, the agent manager on the owner's desktop, and this site share one secret, `BRIDGE_SECRET`. It is always sent as `Authorization: Bearer <BRIDGE_SECRET>`. It never appears in a page, script, log line or API response.
+
+### Outbound: site → Hermes (typed commands)
 
 | Call | Request | Expected response |
 |---|---|---|
 | `POST {BRIDGE_URL}/tasks` | `{"ref": "ABU-00001", "employee_key": "EMPLOYEE_2", "command": "..."}` | `{"bridge_task_id": "..."}` (1–128 chars of `[A-Za-z0-9._:-]`) |
 | `GET {BRIDGE_URL}/tasks/{bridge_task_id}` | — | `{"status": "queued|working|done|failed", "progress": 0-100, "result": "..."}` |
-| `GET {BRIDGE_URL}/health` | — | any 2xx JSON object. Used to show *Connected* when no tasks are in flight. |
+| `GET {BRIDGE_URL}/health` | — | Any 2xx JSON object. Used to show Connected when no tasks are in flight. |
 
 - **Idempotency:** `ref` is unique per task. Hermes should use it as an idempotency key, because a forward that timed out is retried.
 - **Poller:** it runs every 5 seconds with per-task exponential backoff. A lease in SQLite ensures only one gunicorn worker talks to the bridge at a time.
-- **Status mapping:** a bridge status of `queued` shows as *Sent to Hermes*. Unknown statuses or malformed payloads are ignored rather than guessed. Progress is only what the bridge reports, except that a `done` with no progress value is shown as 100.
-- **Bridge status:** *Connected* means the bridge answered successfully within the last 45 seconds.
+- **Status mapping:** a bridge status of `queued` shows as "Sent to Hermes". Unknown statuses or malformed payloads are ignored rather than guessed. Progress is only what the bridge reports, except that a `done` with no progress value is shown as 100.
+- **Connected:** Connected means the site reached Hermes successfully within the last 45 seconds.
+- **Offline behavior:** while Hermes is unreachable, new commands stay Queued and are sent automatically once it answers again.
+
+### Inbound: Hermes → site (tasks Hermes received elsewhere, e.g. from the voice agent)
+
+`POST https://abuai.online/api/bridge/report` with header `Authorization: Bearer <BRIDGE_SECRET>` and a JSON body:
+
+| Field | Required | Rules |
+|---|---|---|
+| `ref` | yes | `[A-Za-z0-9._:-]{1,64}`. Hermes's own id for the task and the upsert key. |
+| `employee_key` | yes | One of `EMPLOYEE_1` … `EMPLOYEE_5`. |
+| `command_text` | yes | 1–4000 characters. |
+| `source` | no | `voice` or `external` (default `external`). |
+| `status` | no | `queued`, `working`, `done` or `failed` (default `queued`). |
+| `progress` | no | Integer 0–100. |
+| `result` | no | String. Stored up to 200,000 characters; anything longer is cut off. |
+
+Unknown fields or invalid values return 400. The responses are:
+
+- **201** `{"task": {...}}`: a new task was created.
+- **200** `{"task": {...}}`: an existing task was updated.
+- **401**: the secret is missing or wrong.
+- **404**: `BRIDGE_SECRET` is not configured, so the feature is off.
+- **429**: more than 120 requests per minute from one IP.
+
+Upsert and idempotency:
+- **Creating:** the first report for a `ref` creates the task.
+- **Updating:** later reports for that `ref` update only its status, progress and result. The employee and command text are kept from the first report.
+- **No going backwards:** a task never moves back to an earlier state (for example, working stays working if a late `queued` report arrives). A task that is `done` or `failed` is final, and later reports leave it unchanged.
+- **Timestamps:** `finished_at` is set the first time a task reaches `done` or `failed`. `started_at` is set the first time it reports `working`.
+- **Retries:** resending the same report is safe.
+- **Display:** an inbound `queued` means Hermes already holds the task, so the site shows it as "Sent to Hermes".
+- **No double-sending:** reported tasks are never forwarded back to Hermes or polled by the site. Hermes keeps them current by reporting again.
+
+This endpoint is the only route that skips the browser session and CSRF checks. The exemption applies only to `POST /api/bridge/report`, and the Bearer secret grants nothing on any other route.
 
 ## Dashboard API (login required, JSON)
 
@@ -122,7 +158,7 @@ All requests carry `Authorization: Bearer <BRIDGE_SECRET>`.
 | `GET /api/state` | Employees with live status, bridge state (incl. `last_ok` / `last_fail` contact times), voice flag, the 8 most recent tasks, a `stats` block, server time. Polled every 5 s by the dashboard. |
 | `GET /api/tasks/<ref>` | One task with every stored field: command text, full result text, `created_at`, `sent_at`, `started_at`, `updated_at`, `finished_at`. 404 JSON if unknown. |
 | `GET /api/employees/<id>` | The employee with current task, last 10 tasks, per-status counts and a preview of its latest result. 404 JSON if unknown. |
-| `POST /api/tasks` | Creates a task (text or voice) and forwards it to Hermes. |
+| `POST /api/tasks` | Creates a typed task and forwards it to Hermes. |
 | `GET /api/voice/token` | Short-lived ElevenLabs conversation token. |
 
 The `sent_at` and `started_at` columns are added automatically to existing databases on boot. They record when Hermes accepted a task and when it first reported `working`. Tasks created before this change show those steps as "time not recorded".
@@ -134,9 +170,11 @@ The dashboard has one poller (`dashboard.js`):
 
 ## Voice flow
 
-1. When you press **Talk**, the browser asks for microphone permission. A denial is shown as a plain message.
+The owner speaks to his ElevenLabs agent. The agent passes the order to Hermes, which is configured in the agent outside this codebase. Hermes does the work and reports the task into this site through `POST /api/bridge/report`. The dashboard then shows it live: the robot comes to the desk, the live feed announces it, and the reports list it. The website never submits voice transcripts as tasks itself, because that would send every order twice.
+
+1. When you press Talk, the browser asks for microphone permission. A denial is shown as a plain message.
 2. The browser calls `GET /api/voice/token`. This requires login.
 3. The backend calls `GET https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=…` with the `xi-api-key` header and returns only `{token}`.
 4. The page loads `@elevenlabs/client@1.26.0` (`dist/lib.iife.js`) from jsDelivr, pinned with Subresource Integrity, and starts a session with `conversationToken`.
-5. The user's transcript is collected from `onMessage` events whose role is `user`.
-6. When the conversation ends, the transcript is posted to `/api/tasks` with `source: "voice"` for the employee selected in the picker. The page shows the result, e.g. *"Voice command sent to EMPLOYEE_2 — ABU-00007"*. If no command was captured, it shows *"No command captured from that conversation."*
+5. The user's transcript is collected from `onMessage` events whose role is `user`. It is used only for display.
+6. When the conversation ends, the page shows "Heard: <transcript>" with the note "Your agent passes voice orders to Hermes — the task appears here as soon as Hermes reports it." If nothing was captured, it shows "No command captured from that conversation."

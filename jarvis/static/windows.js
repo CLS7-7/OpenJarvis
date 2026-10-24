@@ -144,7 +144,7 @@
     emp.dataset.openEmployee = String(t.employee_id);
     emp.setAttribute("aria-label", "Open " + t.employee_name + " details");
     head.appendChild(emp);
-    head.appendChild(el("span", "tag", t.source === "voice" ? "Voice" : "Text"));
+    head.appendChild(el("span", "tag", t.source_label));
     body.appendChild(head);
     body.appendChild(progressRow(t.progress));
 
