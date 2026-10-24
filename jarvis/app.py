@@ -632,6 +632,26 @@ def recent_tasks(conn, limit: int) -> list[dict]:
     return [task_dict(r) for r in rows]
 
 
+def task_stats(conn) -> dict:
+    """Real task counts for the analytics panel (plain COUNT queries)."""
+    midnight = int(_dt.datetime.now(_dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+    def count(where: str = "1", params: tuple = ()) -> int:
+        return conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}", params).fetchone()[0]
+
+    done = count("status = 'done'")
+    failed = count("status = 'failed'")
+    finished = done + failed
+    return {
+        "total": count(),
+        "today": count("created_at >= ?", (midnight,)),
+        "done": done,
+        "working": count("status = 'working'"),
+        "failed": failed,
+        "completion_rate": round(100 * done / finished) if finished else None,
+    }
+
+
 # --- app factory ---------------------------------------------------------
 
 PUBLIC_ENDPOINTS = {"login", "login_totp", "setup", "static"}
@@ -1056,6 +1076,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "bridge": bridge_state(conn, bridge()),
             "voice": {"configured": voice_configured()},
             "recent_tasks": recent_tasks(conn, 8),
+            "stats": task_stats(conn),
             "server_time": iso(now()),
         }
 

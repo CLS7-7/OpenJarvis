@@ -1,4 +1,5 @@
 <!doctype html>
+{% from "_hud.html" import core_mark %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -13,14 +14,11 @@
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
+  <div class="hud-backdrop" aria-hidden="true"></div>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard') if current_user else url_for('login') }}" aria-label="abuai home">
-      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-        <circle cx="16" cy="16" r="13" fill="none" stroke="#22D3EE" stroke-width="2.5"/>
-        <circle cx="16" cy="16" r="6" fill="#7C5CFF"/>
-        <circle cx="16" cy="16" r="2.4" fill="#E6FBFF"/>
-      </svg>
+      {{ core_mark("brand-mark") }}
       <span>abuai</span>
     </a>
     {% if current_user %}
@@ -37,6 +35,7 @@
     {% endif %}
   </header>
   <main id="main" class="{% block main_class %}container{% endblock %}" tabindex="-1">
+    {% if 'auth-wrap' in self.main_class() %}<div class="auth-mark">{{ core_mark("core-mark") }}<p class="auth-mark-label">abuai · Jarvis</p></div>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="footer">

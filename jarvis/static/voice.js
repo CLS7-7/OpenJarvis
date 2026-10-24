@@ -32,7 +32,30 @@
     };
     labelNode.textContent = labels[next] || "Talk to Jarvis";
     button.setAttribute("aria-busy", next === "connecting" || next === "submitting" ? "true" : "false");
+    document.dispatchEvent(new CustomEvent("abuai:voice-state", { detail: { state: next, mode: mode || "" } }));
   }
+
+  /* Real conversation volumes (0..1) for the waveform; null when not available. */
+  function readVolume(name) {
+    if (!conversation || typeof conversation[name] !== "function") return null;
+    try {
+      var v = Number(conversation[name]());
+      return isFinite(v) ? Math.max(0, Math.min(1, v)) : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  window.abuai.voice = {
+    levels: function () {
+      return {
+        live: state === "live",
+        mode: button ? (button.dataset.mode || "") : "",
+        input: readVolume("getInputVolume"),
+        output: readVolume("getOutputVolume")
+      };
+    }
+  };
 
   function substantive(text) {
     var letters = text.replace(/[^\p{L}\p{N}]/gu, "");

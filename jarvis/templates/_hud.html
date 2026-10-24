@@ -1,0 +1,184 @@
+{#- Hologram building blocks: the Jarvis core, the mini core mark, robot busts and status icons. All original SVG. -#}
+
+{% macro core_svg() -%}
+<svg class="core-svg" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
+  <defs>
+    <radialGradient id="core-glow-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#67E8F9" stop-opacity=".55"/>
+      <stop offset=".45" stop-color="#22D3EE" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core-eye-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".95"/>
+      <stop offset=".35" stop-color="#67E8F9" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="core-head-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#67E8F9"/>
+      <stop offset=".6" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+    <clipPath id="core-head-clip">
+      <polygon points="200,118 238,128 258,158 262,200 252,236 232,262 214,276 186,276 168,262 148,236 138,200 142,158 162,128"/>
+    </clipPath>
+  </defs>
+
+  <circle class="core-glow" cx="200" cy="200" r="150" fill="url(#core-glow-grad)"/>
+
+  <g class="core-ticks" stroke="#67E8F9" stroke-width="2" opacity=".6">
+    <line x1="200" y1="2" x2="200" y2="14"/><line x1="200" y1="386" x2="200" y2="398"/>
+    <line x1="2" y1="200" x2="14" y2="200"/><line x1="386" y1="200" x2="398" y2="200"/>
+  </g>
+
+  <g class="ring ring-1"><g class="ring-boost">
+    <circle cx="200" cy="200" r="188" fill="none" stroke="#22D3EE" stroke-width="1.5" stroke-dasharray="2 9" opacity=".55"/>
+    <circle cx="200" cy="200" r="181" fill="none" stroke="#67E8F9" stroke-width="3" stroke-dasharray="180 120 60 230" stroke-linecap="round" opacity=".85"/>
+  </g></g>
+
+  <g class="ring ring-2"><g class="ring-boost">
+    <circle cx="200" cy="200" r="162" fill="none" stroke="#22D3EE" stroke-width="7" stroke-dasharray="60 18.3" opacity=".28"/>
+    <circle cx="200" cy="200" r="168" fill="none" stroke="#7C5CFF" stroke-width="2" stroke-dasharray="90 200 40 180" opacity=".8"/>
+  </g></g>
+
+  <g class="ring ring-3"><g class="ring-boost">
+    <circle cx="200" cy="200" r="141" fill="none" stroke="#67E8F9" stroke-width="1.5" stroke-dasharray="250 80 90 466" opacity=".9"/>
+    <polygon points="200,52 195,62 205,62" fill="#67E8F9"/>
+    <polygon points="200,348 195,338 205,338" fill="#67E8F9"/>
+  </g></g>
+
+  <g class="ring ring-4"><g class="ring-boost">
+    <circle cx="200" cy="200" r="124" fill="none" stroke="#7C5CFF" stroke-width="2" stroke-dasharray="3 7" opacity=".7"/>
+  </g></g>
+
+  <circle class="core-pulse-ring" cx="200" cy="200" r="120" fill="none" stroke="#67E8F9" stroke-width="3"/>
+
+  <g class="core-head">
+    <polygon class="core-head-halo" points="200,118 238,128 258,158 262,200 252,236 232,262 214,276 186,276 168,262 148,236 138,200 142,158 162,128"
+             fill="none" stroke="#22D3EE" stroke-width="9" stroke-linejoin="round" opacity=".14"/>
+    <polygon points="200,118 238,128 258,158 262,200 252,236 232,262 214,276 186,276 168,262 148,236 138,200 142,158 162,128"
+             fill="#22D3EE" fill-opacity=".07" stroke="url(#core-head-grad)" stroke-width="2.2" stroke-linejoin="round"/>
+    <g fill="none" stroke="#67E8F9" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" opacity=".75">
+      <polyline points="162,128 180,150 220,150 238,128"/>
+      <line x1="200" y1="118" x2="200" y2="150"/>
+      <polyline points="180,150 176,164"/><polyline points="220,150 224,164"/>
+      <polyline points="152,176 176,164 200,170 224,164 248,176"/>
+      <polyline points="148,200 176,214 186,250"/>
+      <polyline points="252,200 224,214 214,250"/>
+      <polyline points="176,250 200,262 224,250"/>
+      <polyline points="142,158 152,176 148,200"/><polyline points="258,158 248,176 252,200"/>
+      <line x1="190" y1="236" x2="210" y2="236"/><line x1="188" y1="243" x2="212" y2="243"/><line x1="191" y1="250" x2="209" y2="250"/>
+    </g>
+    <g fill="#22D3EE" fill-opacity=".12" stroke="#67E8F9" stroke-width="1.4" stroke-linejoin="round">
+      <polygon points="128,184 138,178 138,224 128,218"/>
+      <polygon points="272,184 262,178 262,224 272,218"/>
+    </g>
+    <circle cx="133" cy="201" r="2.6" fill="#67E8F9"/><circle cx="267" cy="201" r="2.6" fill="#67E8F9"/>
+    <ellipse class="core-eye-glow" cx="180" cy="193" rx="26" ry="16" fill="url(#core-eye-grad)"/>
+    <ellipse class="core-eye-glow" cx="220" cy="193" rx="26" ry="16" fill="url(#core-eye-grad)"/>
+    <polygon class="core-eye" points="166,190 190,186 194,196 170,200" fill="#E6FBFF"/>
+    <polygon class="core-eye" points="234,190 210,186 206,196 230,200" fill="#E6FBFF"/>
+    <g clip-path="url(#core-head-clip)">
+      <rect class="core-scan" x="130" y="112" width="140" height="6" fill="#67E8F9" opacity=".35"/>
+    </g>
+  </g>
+</svg>
+{%- endmacro %}
+
+{% macro core_mark(cls="core-mark") -%}
+<svg class="{{ cls }}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+  <g class="mark-ring mark-ring-a"><circle cx="32" cy="32" r="29" fill="none" stroke="#22D3EE" stroke-width="2" stroke-dasharray="26 10 8 12" stroke-linecap="round"/></g>
+  <g class="mark-ring mark-ring-b"><circle cx="32" cy="32" r="23" fill="none" stroke="#7C5CFF" stroke-width="1.6" stroke-dasharray="3 4"/></g>
+  <polygon points="32,15 42,19 46,29 44,40 37,48 27,48 20,40 18,29 22,19" fill="#22D3EE" fill-opacity=".12" stroke="#67E8F9" stroke-width="1.6" stroke-linejoin="round"/>
+  <polygon points="23,30 30,29 31,32 24,33" fill="#E6FBFF"/>
+  <polygon points="41,30 34,29 33,32 40,33" fill="#E6FBFF"/>
+  <line x1="29" y1="41" x2="35" y2="41" stroke="#67E8F9" stroke-width="1.4" stroke-linecap="round"/>
+</svg>
+{%- endmacro %}
+
+{% macro robot(emp) -%}
+{%- set c = emp.color -%}
+<svg class="robot robot-{{ emp.avatar_style }}" viewBox="0 0 120 140" aria-hidden="true" focusable="false">
+  <g class="rb-torso">
+    <path d="M28 140 L33 104 Q36 89 60 87 Q84 89 87 104 L92 140 Z" fill="#DCE6F5"/>
+    <path d="M28 140 L33 104 Q36 89 60 87 L60 140 Z" fill="#FFFFFF" opacity=".35"/>
+    <path d="M42 140 L45 112 Q60 104 75 112 L78 140" fill="none" stroke="{{ c }}" stroke-width="1.6" opacity=".55"/>
+    <circle class="rb-core-glow" cx="60" cy="114" r="12" fill="{{ c }}" opacity=".25"/>
+    <circle class="rb-core" cx="60" cy="114" r="6" fill="{{ c }}" stroke="#E6FBFF" stroke-width="1.5"/>
+  </g>
+  <rect x="53" y="76" width="14" height="13" rx="4" fill="#8FA3BF"/>
+  <g class="rb-arm rb-arm-l">
+    <circle cx="31" cy="100" r="9" fill="#C9D5E8" stroke="{{ c }}" stroke-width="1.5"/>
+    <path d="M27 106 Q19 122 29 133" fill="none" stroke="#C9D5E8" stroke-width="8" stroke-linecap="round"/>
+    <circle class="rb-hand" cx="31" cy="133" r="5" fill="#EEF3FB" stroke="{{ c }}" stroke-width="1.5"/>
+  </g>
+  <g class="rb-arm rb-arm-r">
+    <circle cx="89" cy="100" r="9" fill="#C9D5E8" stroke="{{ c }}" stroke-width="1.5"/>
+    <path d="M93 106 Q101 122 91 133" fill="none" stroke="#C9D5E8" stroke-width="8" stroke-linecap="round"/>
+    <circle class="rb-hand" cx="89" cy="133" r="5" fill="#EEF3FB" stroke="{{ c }}" stroke-width="1.5"/>
+  </g>
+  <g class="rb-head">
+    {%- if emp.avatar_style == 'antenna' %}
+    <line x1="60" y1="30" x2="60" y2="14" stroke="#C9D5E8" stroke-width="3" stroke-linecap="round"/>
+    <circle class="rb-light" cx="60" cy="12" r="4.5" fill="{{ c }}"/>
+    {%- elif emp.avatar_style == 'headphones' %}
+    <path d="M30 54 Q28 20 60 20 Q92 20 90 54" fill="none" stroke="#1B2236" stroke-width="6" stroke-linecap="round"/>
+    {%- elif emp.avatar_style == 'headset' %}
+    <path d="M31 52 Q31 22 60 22 Q89 22 89 52" fill="none" stroke="#1B2236" stroke-width="4" stroke-linecap="round"/>
+    {%- endif %}
+    <rect x="34" y="30" width="52" height="50" rx="22" fill="#EEF3FB"/>
+    <path d="M34 55 Q34 30 60 30 Q46 34 42 52 Z" fill="#FFFFFF" opacity=".7"/>
+    <rect x="40" y="44" width="40" height="22" rx="11" fill="#0B1222"/>
+    <ellipse class="rb-eye" cx="51" cy="55" rx="4.2" ry="3.2" fill="{{ c }}"/>
+    <ellipse class="rb-eye" cx="69" cy="55" rx="4.2" ry="3.2" fill="{{ c }}"/>
+    {%- if emp.avatar_style == 'headphones' %}
+    <rect x="24" y="44" width="13" height="22" rx="6" fill="#1B2236"/>
+    <rect x="83" y="44" width="13" height="22" rx="6" fill="#1B2236"/>
+    <rect class="rb-light" x="27" y="49" width="5" height="12" rx="2.5" fill="{{ c }}"/>
+    <rect class="rb-light" x="88" y="49" width="5" height="12" rx="2.5" fill="{{ c }}"/>
+    {%- else %}
+    <circle cx="33" cy="56" r="6" fill="#C9D5E8" stroke="{{ c }}" stroke-width="2"/>
+    <circle cx="87" cy="56" r="6" fill="#C9D5E8" stroke="{{ c }}" stroke-width="2"/>
+    {%- endif %}
+    {%- if emp.avatar_style == 'headset' %}
+    <path d="M33 62 Q35 74 49 73" fill="none" stroke="#1B2236" stroke-width="3" stroke-linecap="round"/>
+    <circle class="rb-light" cx="50" cy="73" r="3.2" fill="{{ c }}"/>
+    {%- elif emp.avatar_style == 'glasses' %}
+    <rect x="42" y="49" width="36" height="12" rx="6" fill="{{ c }}" fill-opacity=".18" stroke="{{ c }}" stroke-width="1.6"/>
+    {%- elif emp.avatar_style == 'cap' %}
+    <path d="M34 46 Q35 24 60 24 Q85 24 86 46 Z" fill="#1B2236"/>
+    <path d="M38 44 Q60 52 82 44 L84 48 Q60 58 36 48 Z" fill="{{ c }}"/>
+    <circle cx="60" cy="27" r="2.4" fill="{{ c }}"/>
+    {%- endif %}
+  </g>
+</svg>
+{%- endmacro %}
+
+{% macro desk_screen(emp) -%}
+{%- set p = emp.progress -%}
+<svg class="desk-screen" viewBox="0 0 120 44" aria-hidden="true" focusable="false">
+  <rect x="1" y="1" width="118" height="30" rx="5" fill="#22D3EE" fill-opacity=".1" stroke="#67E8F9" stroke-opacity=".8"/>
+  <circle cx="18" cy="16" r="10" fill="none" stroke="#67E8F9" stroke-opacity=".2" stroke-width="3"/>
+  <circle class="desk-arc" cx="18" cy="16" r="10" fill="none" stroke="#67E8F9" stroke-width="3" stroke-linecap="round"
+          stroke-dasharray="62.83" stroke-dashoffset="{{ '%.2f' | format(62.83 * (1 - p / 100)) }}" transform="rotate(-90 18 16)"/>
+  <rect x="34" y="9" width="78" height="4" rx="2" fill="#67E8F9" fill-opacity=".2"/>
+  <rect class="desk-bar" x="34" y="9" width="{{ '%.1f' | format(78 * p / 100) }}" height="4" rx="2" fill="#67E8F9"/>
+  <rect x="34" y="18" width="56" height="2.5" rx="1.2" fill="#67E8F9" fill-opacity=".35"/>
+  <rect x="34" y="23" width="40" height="2.5" rx="1.2" fill="#67E8F9" fill-opacity=".25"/>
+  <g class="desk-keys" fill="#67E8F9" fill-opacity=".45">
+    <rect x="14" y="35" width="10" height="3" rx="1"/><rect x="27" y="35" width="10" height="3" rx="1"/><rect x="40" y="35" width="10" height="3" rx="1"/>
+    <rect x="53" y="35" width="14" height="3" rx="1"/><rect x="70" y="35" width="10" height="3" rx="1"/><rect x="83" y="35" width="10" height="3" rx="1"/><rect x="96" y="35" width="10" height="3" rx="1"/>
+    <rect x="20" y="40" width="80" height="3" rx="1"/>
+  </g>
+</svg>
+{%- endmacro %}
+
+{% macro status_icon(status) -%}
+<svg class="st-icon st-icon-{{ status }}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+{%- if status == 'done' %}<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+{%- elif status == 'working' %}<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" opacity=".25"/><path class="st-spin" d="M12 3a9 9 0 0 1 9 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+{%- elif status == 'failed' %}<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+{%- elif status == 'sent' %}<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/><path d="M7 12h9M13 8.5l3.5 3.5-3.5 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+{%- else %}<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/><path d="M12 7v5.5l3.5 2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+{%- endif %}
+</svg>
+{%- endmacro %}

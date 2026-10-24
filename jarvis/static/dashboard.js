@@ -7,6 +7,35 @@
   var pollTimer = null;
   var inFlight = false;
   var lastState = null;
+  var lastStatusByEmployee = {};
+  var DESK_ARC = 62.83;
+  var DESK_BAR = 78;
+  var GAUGE_ARC = 301.59;
+  var SVG_OPEN = '<svg class="st-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">';
+  var RING = '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/>';
+  var ICONS = {
+    done: RING + '<path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+    working: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" opacity=".25"/><path class="st-spin" d="M12 3a9 9 0 0 1 9 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+    failed: RING + '<path d="M8.5 8.5l7 7M15.5 8.5l-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+    sent: RING + '<path d="M7 12h9M13 8.5l3.5 3.5-3.5 3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+    queued: RING + '<path d="M12 7v5.5l3.5 2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+  };
+
+  /* Seat phase from real data: working > alert (queued/sent) > done > idle. */
+  function phaseOf(emp) {
+    var t = emp.current_task;
+    if (emp.status === "working") return "working";
+    if (t && (t.status === "queued" || t.status === "sent")) return "alert";
+    if (emp.status === "done") return "done";
+    return "idle";
+  }
+
+  function statusIcon(status) {
+    var span = el("span", "task-icon status-" + status);
+    // Static, trusted markup only (no task data is interpolated).
+    span.innerHTML = SVG_OPEN + (ICONS[status] || ICONS.queued) + "</svg>";
+    return span;
+  }
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -25,8 +54,17 @@
       var card = document.querySelector('.emp-card[data-employee-id="' + emp.id + '"]');
       if (card) {
         var working = emp.status === "working";
+        var phase = phaseOf(emp);
+        var previous = lastStatusByEmployee[emp.id];
         card.classList.toggle("is-working", working);
         card.dataset.status = emp.status;
+        card.dataset.phase = phase;
+        if (previous && previous !== "done" && emp.status === "done") celebrateSeat(card);
+        lastStatusByEmployee[emp.id] = emp.status;
+        var arc = card.querySelector(".desk-arc");
+        if (arc) arc.setAttribute("stroke-dashoffset", (DESK_ARC * (1 - emp.progress / 100)).toFixed(2));
+        var bar = card.querySelector(".desk-bar");
+        if (bar) bar.setAttribute("width", (DESK_BAR * emp.progress / 100).toFixed(1));
         card.querySelector(".emp-name").textContent = emp.name;
 
         var pill = card.querySelector('[data-role="pill"]');
@@ -59,6 +97,69 @@
     });
   }
 
+  function celebrateSeat(card) {
+    card.classList.remove("just-done");
+    void card.offsetWidth; // restart the one-shot animation
+    card.classList.add("just-done");
+    setTimeout(function () { card.classList.remove("just-done"); }, 1600);
+  }
+
+  function renderDeskHolo(employees) {
+    var node = document.getElementById("desk-holo-text");
+    if (!node) return;
+    var working = employees.filter(function (e) { return e.status === "working"; }).length;
+    node.textContent = working + " of " + employees.length + " working";
+  }
+
+  function renderWorkflow(tasks, bridge) {
+    var panel = document.getElementById("workflow");
+    if (!panel) return;
+    var latest = tasks.length ? tasks[0] : null;
+    var st = latest ? latest.status : "";
+    var lit = {
+      command: !!latest,
+      employee: !!latest,
+      hermes: ["sent", "working", "done", "failed"].indexOf(st) !== -1,
+      result: st === "done" || st === "failed"
+    };
+    var active = { queued: "employee", sent: "hermes", working: "hermes", done: "result", failed: "result" }[st] || "";
+    panel.classList.toggle("is-empty", !latest);
+    panel.dataset.status = st;
+    panel.querySelectorAll(".flow-node").forEach(function (node) {
+      var stage = node.dataset.stage;
+      node.classList.toggle("is-lit", !!lit[stage]);
+      node.classList.toggle("is-active", active === stage);
+      node.classList.toggle("is-failed", stage === "result" && st === "failed");
+    });
+    var caption = document.getElementById("flow-caption");
+    if (!caption) return;
+    if (!latest) {
+      caption.textContent = "No tasks yet — the flow lights up as your first command moves through it.";
+      return;
+    }
+    var text = latest.ref + " · " + latest.employee_name + " · " + latest.status_label;
+    if (st === "queued" && !bridge.connected) text += " — waiting for bridge";
+    caption.textContent = text;
+  }
+
+  function setText(id, value) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = value;
+  }
+
+  function renderStats(stats) {
+    if (!stats) return;
+    setText("stat-today", String(stats.today));
+    setText("stat-done", String(stats.done));
+    setText("stat-working", String(stats.working));
+    setText("stat-failed", String(stats.failed));
+    setText("stat-total", stats.total + (stats.total === 1 ? " task" : " tasks") + " recorded in total.");
+    var rate = stats.completion_rate;
+    setText("gauge-value", rate === null || rate === undefined ? "—" : rate + "%");
+    var arc = document.getElementById("gauge-arc");
+    if (arc) arc.setAttribute("stroke-dashoffset", (GAUGE_ARC * (1 - (rate || 0) / 100)).toFixed(2));
+  }
+
   function renderRecent(tasks) {
     var list = document.getElementById("recent-tasks");
     if (!list) return;
@@ -74,6 +175,7 @@
       var li = el("li", "task-row");
       var a = el("a", "task-link");
       a.href = task.url;
+      a.appendChild(statusIcon(task.status));
       a.appendChild(el("span", "task-ref", task.ref));
       a.appendChild(el("span", "task-title", task.title));
       var meta = el("span", "task-meta muted small");
@@ -103,8 +205,12 @@
     lastState = state;
     renderBridge(state.bridge);
     renderEmployees(state.employees);
+    renderDeskHolo(state.employees);
     renderRecent(state.recent_tasks);
+    renderWorkflow(state.recent_tasks, state.bridge);
+    renderStats(state.stats);
     renderVoice(state.voice);
+    document.dispatchEvent(new CustomEvent("abuai:state", { detail: state }));
   }
 
   function refresh() {
@@ -200,6 +306,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     initCommandForm();
+    refresh();
     schedule();
   });
 })();
