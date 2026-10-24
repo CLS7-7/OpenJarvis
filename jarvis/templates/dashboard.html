@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_avatar.html" import avatar %}
+{% block title %}Command center{% endblock %}
+{% block content %}
+<h1 class="sr-only">Command center</h1>
+
+<p id="bridge-banner" class="alert alert-warn banner" role="status" {% if state.bridge.connected %}hidden{% endif %}>
+  <span class="dot dot-warn" aria-hidden="true"></span>
+  <span>Bridge not connected — tasks will send when Hermes is connected.</span>
+</p>
+
+<div class="dash-grid">
+  <section class="panel voice-panel" aria-labelledby="voice-title"
+           data-worklet-raw="{{ url_for('static', filename='vendor/elevenlabs-client-1.26.0/rawAudioProcessor.js') }}"
+           data-worklet-concat="{{ url_for('static', filename='vendor/elevenlabs-client-1.26.0/audioConcatProcessor.js') }}">
+    <h2 id="voice-title" class="panel-title">Voice</h2>
+    <button type="button" id="talk-btn" class="talk-btn" data-state="{{ 'idle' if state.voice.configured else 'unconfigured' }}"
+            aria-pressed="false" aria-describedby="voice-status" {% if not state.voice.configured %}disabled{% endif %}>
+      <span class="talk-ring" aria-hidden="true"></span>
+      <svg class="talk-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" fill="currentColor"/></svg>
+      <span class="talk-label">{{ 'Talk to Jarvis' if state.voice.configured else 'Voice not configured yet' }}</span>
+    </button>
+    <p id="voice-status" class="voice-status" role="status" aria-live="polite">
+      {%- if state.voice.configured %}Press Talk, speak your command, then end the conversation. It goes to the employee picked below.{% else %}Voice will be available once the ElevenLabs agent is configured on the server.{% endif -%}
+    </p>
+  </section>
+
+  <section class="panel command-panel" aria-labelledby="command-title">
+    <h2 id="command-title" class="panel-title">Command</h2>
+    <form id="command-form" class="form" novalidate>
+      <label class="field">
+        <span>Assign to</span>
+        <select id="employee-picker" name="employee_id" required>
+          {% for emp in state.employees %}<option value="{{ emp.id }}">{{ emp.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>What should they do?</span>
+        <textarea id="command-text" name="command_text" rows="4" maxlength="4000" required placeholder="Describe the task in plain language"></textarea>
+      </label>
+      <div class="form-row">
+        <button type="submit" id="command-send" class="btn btn-primary" data-loading-text="Sending…">Send command</button>
+        <p id="command-result" class="form-result" role="status" aria-live="polite"></p>
+      </div>
+    </form>
+  </section>
+</div>
+
+<section class="section" aria-labelledby="team-title">
+  <div class="section-head">
+    <h2 id="team-title">Employees</h2>
+    <p class="muted small">Live status · refreshes every 5 seconds</p>
+  </div>
+  <ul class="employee-grid" id="employee-grid">
+    {% for emp in state.employees %}
+    {% set t = emp.current_task %}
+    <li class="emp-card{% if emp.status == 'working' %} is-working{% endif %}" data-employee-id="{{ emp.id }}" data-status="{{ emp.status }}" data-color="{{ emp.color }}">
+      <div class="emp-avatar">{{ avatar(emp) }}</div>
+      <div class="emp-info">
+        <div class="emp-head">
+          <h3 class="emp-name">{{ emp.name }}</h3>
+          <span class="pill pill-{{ emp.status }}" data-role="pill">{{ emp.status_label }}</span>
+        </div>
+        <p class="emp-task" data-role="task">{% if t %}<span class="emp-ref">{{ t.ref }}</span> {{ t.title }}{% else %}No tasks yet{% endif %}</p>
+        <p class="emp-task-status muted small" data-role="task-status">{% if t %}{{ t.status_label }}{% if t.status == 'queued' and not state.bridge.connected %} — waiting for bridge{% endif %}{% endif %}</p>
+        <progress class="progress" max="100" value="{{ emp.progress }}" data-role="progress" aria-label="{{ emp.name }} progress">{{ emp.progress }}%</progress>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="section" aria-labelledby="recent-title">
+  <div class="section-head">
+    <h2 id="recent-title">Recent reports</h2>
+    <a class="link-strong" href="{{ url_for('reports') }}">View all reports</a>
+  </div>
+  <ul class="task-list" id="recent-tasks">
+    {% for task in state.recent_tasks %}
+    <li class="task-row">
+      <a href="{{ task.url }}" class="task-link">
+        <span class="task-ref">{{ task.ref }}</span>
+        <span class="task-title">{{ task.title }}</span>
+        <span class="task-meta muted small">{{ task.employee_name }} · <time datetime="{{ task.created_at }}">{{ task.created_human }}</time>{% if task.source == 'voice' %} · voice{% endif %}</span>
+        <span class="status status-{{ task.status }}">{{ task.status_label }}</span>
+      </a>
+    </li>
+    {% else %}
+    <li class="empty-state">
+      <p class="empty-title">No tasks yet</p>
+      <p class="muted small">Send a command or talk to Jarvis — reports appear here as soon as a task is created.</p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.26.0/dist/lib.iife.js" integrity="sha384-GAgUf1yx/dGreo/QTqLRVycB5sMQdsPKOmbMWlKec+fjMXzz+OXy4c6EfjB7Anb7" crossorigin="anonymous" defer></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+<script src="{{ url_for('static', filename='voice.js') }}" defer></script>
+{% endblock %}

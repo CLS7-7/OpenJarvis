@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}First-time setup{% endblock %}
+{% block main_class %}container auth-wrap{% endblock %}
+{% block content %}
+<section class="panel auth-card{% if step == 'enroll' or step == 'done' %} auth-card-wide{% endif %}" aria-labelledby="setup-title">
+  <p class="eyebrow">One-time setup · Step {{ {'account': 1, 'enroll': 2, 'done': 3}[step] }} of 3</p>
+  {% if step == 'account' %}
+  <h1 id="setup-title">Create the owner account</h1>
+  <p class="muted">This page works exactly once. After the owner account exists it disappears for good.</p>
+  {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('setup') }}" class="form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="account">
+    <label class="field">
+      <span>Username</span>
+      <input name="username" value="{{ username }}" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus>
+      <small class="hint">3-32 characters: letters, numbers, dot, dash or underscore.</small>
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" required minlength="12" maxlength="72" autocomplete="new-password">
+      <small class="hint">At least 12 characters. A passphrase works well.</small>
+    </label>
+    <label class="field">
+      <span>Confirm password</span>
+      <input type="password" name="password_confirm" required minlength="12" maxlength="72" autocomplete="new-password">
+    </label>
+    <button type="submit" class="btn btn-primary btn-block" data-loading-text="Saving…">Continue to two-factor setup</button>
+  </form>
+
+  {% elif step == 'enroll' %}
+  <h1 id="setup-title">Link your authenticator app</h1>
+  <p class="muted">Scan the code with an authenticator app (1Password, Authy, Google Authenticator, Aegis…) for <strong>{{ username }}</strong>, then enter the 6-digit code it shows.</p>
+  {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+  <div class="enroll">
+    <div class="qr-box">{{ qr_svg | safe }}</div>
+    <div class="enroll-side">
+      <p class="label">Can't scan? Enter this key manually</p>
+      <p class="secret-text" translate="no">{{ secret_groups }}</p>
+      <p class="hint">Type: time-based (TOTP) · 6 digits · 30 seconds</p>
+      <form method="post" action="{{ url_for('setup') }}" class="form" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="verify">
+        <label class="field">
+          <span>6-digit code</span>
+          <input name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" required autocomplete="one-time-code" autofocus>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block" data-loading-text="Verifying…">Verify and create account</button>
+      </form>
+      <form method="post" action="{{ url_for('setup') }}" class="form-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="restart">
+        <button type="submit" class="btn btn-ghost btn-sm" data-loading-text="Restarting…">Start over</button>
+      </form>
+    </div>
+  </div>
+
+  {% else %}
+  <h1 id="setup-title">Save your recovery codes</h1>
+  <p class="muted">The account <strong>{{ username }}</strong> is ready. These 8 codes let you sign in if you lose your authenticator. Each works once. They are shown only now — store them somewhere safe, offline.</p>
+  <ol class="recovery-codes" translate="no">
+    {% for code in recovery_codes %}<li><code>{{ code }}</code></li>{% endfor %}
+  </ol>
+  <p class="alert alert-warn">Reloading this page will not show the codes again.</p>
+  <a class="btn btn-primary btn-block" href="{{ url_for('login') }}">I saved them — go to sign in</a>
+  {% endif %}
+</section>
+{% endblock %}

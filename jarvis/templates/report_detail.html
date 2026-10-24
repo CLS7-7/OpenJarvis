@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ task.ref }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('reports') }}">&larr; All reports</a></p>
+<div class="page-head">
+  <h1>{{ task.ref }}</h1>
+  <span class="status status-{{ task.status }}">{{ task.status_label }}</span>
+</div>
+<section class="panel" aria-labelledby="detail-meta">
+  <h2 id="detail-meta" class="sr-only">Details</h2>
+  <dl class="meta-grid">
+    <div><dt>Assigned to</dt><dd>{{ task.employee_name }}</dd></div>
+    <div><dt>Source</dt><dd>{{ 'Voice' if task.source == 'voice' else 'Text' }}</dd></div>
+    <div><dt>Created</dt><dd><time datetime="{{ task.created_at }}">{{ task.created_human }}</time></dd></div>
+    <div><dt>Finished</dt><dd>{% if task.finished_at %}<time datetime="{{ task.finished_at }}">{{ task.finished_human }}</time>{% else %}Not finished{% endif %}</dd></div>
+    <div><dt>Duration</dt><dd>{{ task.duration or '—' }}</dd></div>
+    <div><dt>Progress</dt><dd><progress class="progress" max="100" value="{{ task.progress }}" aria-label="Progress">{{ task.progress }}%</progress> {{ task.progress }}%</dd></div>
+  </dl>
+</section>
+<section class="panel" aria-labelledby="detail-command">
+  <h2 id="detail-command" class="panel-title">Command</h2>
+  <div class="prewrap">{{ task.command_text }}</div>
+</section>
+<section class="panel" aria-labelledby="detail-result">
+  <h2 id="detail-result" class="panel-title">Result</h2>
+  {% if task.result_text %}
+  <div class="prewrap result-text">{{ task.result_text }}</div>
+  {% elif task.status == 'queued' %}
+  <p class="muted">Not sent yet. It will be sent when the Hermes bridge is connected.</p>
+  {% elif task.status in ('sent', 'working') %}
+  <p class="muted">No result yet — the task is still in progress.</p>
+  {% else %}
+  <p class="muted">The bridge reported no result text for this task.</p>
+  {% endif %}
+</section>
+{% endblock %}
